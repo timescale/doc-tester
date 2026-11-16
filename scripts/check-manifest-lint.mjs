@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Checks that a plan can carry a Kubernetes manifest and that the lint holds the page to what a reader
-// pastes (docs/adr/0011, step 4a). Against a small synthetic page, so it needs no docs checkout and no
+// pastes (docs/adr/0011). Against a small synthetic page, so it needs no docs checkout and no
 // AWS. Every control that should go red is paired with the clean case it was mutated from: a lint that
 // passes everything proves nothing.
 //

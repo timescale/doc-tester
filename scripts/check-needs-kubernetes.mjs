@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks `needs: kubernetes` (docs/adr/0011, step 4b): the token, and what its installer and probe do,
+// Checks `needs: kubernetes` (docs/adr/0011): the token, and what its installer and probe do,
 // run here against fake `curl`, `k3s`, `sha256sum`, `install` and `mv` so each branch is exercised without
 // a box. No AWS. The point of most checks is a negative: an installer that goes on after something failed
 // would leave a box that looks provided and is not.

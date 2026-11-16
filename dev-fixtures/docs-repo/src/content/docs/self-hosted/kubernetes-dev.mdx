@@ -3,7 +3,7 @@ title: Kubernetes dev fixture
 products: [self_hosted]
 ---
 
-Synthetic, throwaway fixture for developing the Kubernetes harness (`needs: kubernetes`, the pod form of `wait`, a manifest in a plan; docs/adr/0011, step 4b). It is the Kubernetes tab's flow as the guide gives it, with these deviations, so the steps after the Deployment stay covered while the real page is fixed:
+Synthetic, throwaway fixture for developing the Kubernetes harness (`needs: kubernetes`, the pod form of `wait`, a manifest in a plan; docs/adr/0011). It is the Kubernetes tab's flow as the guide gives it, with these deviations, so the steps after the Deployment stay covered while the real page is fixed:
 
 - The Deployment's heredoc ends with an `EOF` in column 0. The real page indents it, so a reader's paste never ends (the lint reports it, `heredoc never ends as shown`).
 - The page's `kubectl exec -it` psql session is answered at its prompt and ended with `<Ctrl-D>`, as the Docker fixture does, and the plan asserts on `\dx`'s output, which the real Kubernetes tab never shows.
