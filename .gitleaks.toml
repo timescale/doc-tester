@@ -1,0 +1,13 @@
+# gitleaks configuration for doc-tester: inherit the built-in rules (AWS,
+# GitHub, Slack, JWTs, private keys, generic high-entropy strings, ...) and add only what this repo needs.
+#
+# Runs in CI on every PR (.github/workflows/checks.yml, the `secrets` job) and by hand:
+#   gitleaks git . --config .gitleaks.toml --redact --exit-code=1     # all of the history
+# Do NOT point `gitleaks dir` at a working checkout and read the result as the repo's: it scans the
+# git-ignored `.auth/` browser profile and `.env`, which hold real credentials by design and are never
+# committed (65 findings, none in a tracked file, at the time this was added).
+
+title = "doc-tester gitleaks config"
+
+[extend]
+useDefault = true

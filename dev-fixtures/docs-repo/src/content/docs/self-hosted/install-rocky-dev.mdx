@@ -1,0 +1,49 @@
+---
+title: Install self-hosted TimescaleDB on Rocky dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for the distro matrix (#88, docs/adr/0008). It follows the Rocky Linux 9 steps of `_install-self-hosted-rocky.mdx` (with the shared `_install-self-hosted-redhat-rocky.mdx` partial) and the "add the extension" steps of `_add-timescaledb-to-a-database.mdx`, on a bare Rocky 9 target, with the guide's commands verbatim. The guide hardcodes EL 9, so this is Rocky 9 and not 10. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: rocky
+1. fork the service
+2. run command: `sudo dnf update -y`
+3. run command: `sudo dnf install -y epel-release`
+4. run command: `sudo dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm`
+5. run command:
+   `sudo tee /etc/yum.repos.d/timescale_timescaledb.repo <<EOL
+   [timescale_timescaledb]
+   name=timescale_timescaledb
+   baseurl=https://packagecloud.io/timescale/timescaledb/el/9/\$basearch
+   repo_gpgcheck=1
+   gpgcheck=0
+   enabled=1
+   gpgkey=https://packagecloud.io/timescale/timescaledb/gpgkey
+   sslverify=1
+   sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+   metadata_expire=300
+   EOL`
+6. run command: `sudo dnf module disable postgresql -y`
+7. run command: `sudo dnf install -y postgresql18-server postgresql18-contrib timescaledb-2-postgresql-18`
+8. run command: `sudo /usr/pgsql-18/bin/postgresql-18-setup initdb`
+9. run command: `sudo timescaledb-tune --pg-config=/usr/pgsql-18/bin/pg_config`
+10. answer `Is this correct? [(y)es/(n)o]:` with `y`
+11. answer `Is this okay? [(y)es/(n)o]:` with `y`
+12. answer `Tune memory/parallelism/WAL and other settings? [(y)es/(n)o]:` with `y`
+13. answer `Is this okay? [(y)es/(s)kip/(q)uit]:` with `y` each time
+14. run command: `sudo systemctl enable postgresql-18`
+15. run command: `sudo systemctl start postgresql-18`
+16. run command: `sudo -u postgres psql`
+17. answer `postgres=#` with `\password postgres`
+18. answer `Enter new password for user "postgres":` with `<PASSWORD>`
+19. answer `Enter it again:` with `<PASSWORD>`
+20. answer `postgres=#` with `\q`
+21. run command: `psql -d "postgres://postgres:<PASSWORD>@localhost:5432/postgres"`
+22. answer `postgres=#` with `CREATE EXTENSION IF NOT EXISTS timescaledb;`
+23. answer `postgres=#` with `\dx`
+24. answer `postgres=#` with `\q`
+25. expect rows: `SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'`
+</TestPlan>

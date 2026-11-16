@@ -1,0 +1,22 @@
+{
+  "name": "doc-tester",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Proof of concept: read a Tiger Cloud docs page, follow its steps against a real service, test them, and capture screenshots.",
+  "scripts": {
+    "login": "node scripts/login.mjs",
+    "test-page": "node scripts/test-page.mjs",
+    "build-report": "node scripts/build-report.mjs",
+    "test-batch": "node scripts/test-batch.mjs",
+    "ec2:up": "infra/up.sh",
+    "ec2:down": "infra/down.sh",
+    "ec2:tunnel": "infra/tunnel.sh",
+    "ec2:smoke-test": "node scripts/ec2-smoke-test.mjs",
+    "check": "rc=0; for f in scripts/check-*.mjs; do echo \"== $f\"; node \"$f\" || rc=1; done; exit $rc",
+    "check:live": "node scripts/live-check-slot.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.64.1"
+  }
+}

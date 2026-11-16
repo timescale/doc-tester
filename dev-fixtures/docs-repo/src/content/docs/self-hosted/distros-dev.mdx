@@ -1,0 +1,38 @@
+---
+title: Distros dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for several distros on one page (docs/adr/0008): one run walks an Ubuntu box, a Debian box and a Rocky box, serially, each as its own default user. The blocks only check which machine they got, so they stay small. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: ubuntu
+1. fork the service
+2. run command: `test "$(lsb_release -si)" = Ubuntu`
+3. run command: `test "$(id -un)" = ubuntu`
+4. run command: `test ! -d /etc/postgresql`
+</TestPlan>
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: debian
+1. fork the service
+2. run command: `test "$(lsb_release -si)" = Debian`
+3. run command: `test "$(id -un)" = admin`
+4. run command: `test ! -d /etc/postgresql`
+5. run command: `systemctl is-active amazon-ssm-agent`
+</TestPlan>
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: rocky
+1. fork the service
+2. run command: `. /etc/os-release && test "$ID" = rocky`
+3. run command: `test "$(id -un)" = rocky`
+4. run command: `test ! -d /usr/pgsql-18`
+5. run command: `systemctl is-active amazon-ssm-agent`
+</TestPlan>

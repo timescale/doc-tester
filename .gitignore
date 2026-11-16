@@ -1,0 +1,32 @@
+# --- Secrets and login sessions: NEVER commit these ---
+.env
+.env.*
+!.env.example
+.auth/
+auth-state.json
+*.secret
+
+# --- Installed tools (re-downloaded by `npm install`, no need to store) ---
+node_modules/
+
+# --- Playwright internals ---
+test-results/
+playwright-report/
+playwright/.cache/
+
+# --- Screenshots of the real Console may contain account data: keep them local ---
+screenshots/
+# JetBrains IDE settings
+.idea/
+
+# --- Claude Code per-developer local overrides: never shared ---
+.claude/settings.local.json
+
+# --- Terraform local state/plugin cache: state lives in S3, not here ---
+infra/.terraform/
+*.tfplan
+
+# --- Ad-hoc run logs ---
+test-run.log
+*.run.log
+bundle.crt

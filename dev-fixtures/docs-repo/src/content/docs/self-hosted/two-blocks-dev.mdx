@@ -1,0 +1,23 @@
+---
+title: Two blocks dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for the run-unit loop (docs/adr/0008): one page, two self-hosted blocks, so one run walks two boxes serially. Block 1 is a bare Ubuntu target; block 2 is the pre-installed box. They are different (target, os) pairs, so the parser allows both. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: ubuntu
+1. fork the service
+2. run command: `test ! -d /etc/postgresql`
+3. run command: `lsb_release -cs`
+</TestPlan>
+
+<TestPlan>
+target: self-hosted
+1. fork the service
+2. run SQL: `CREATE TABLE doctest_two_blocks (id int primary key);`
+3. expect rows: `SELECT 1 FROM pg_tables WHERE tablename = 'doctest_two_blocks'`
+4. run command: `systemctl is-active postgresql`
+</TestPlan>

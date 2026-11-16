@@ -1,0 +1,33 @@
+---
+title: Install self-hosted TimescaleDB on Arch dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for the distro matrix (#88, docs/adr/0008). It follows the steps of `_install-self-hosted-archlinux-based.mdx` and the "add the extension" steps of `_add-timescaledb-to-a-database.mdx`, on a bare Arch Linux target, with the guide's commands verbatim. Arch is rolling, so a run is a snapshot of whatever `pacman -Syu` served that day. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: arch
+1. fork the service
+2. run command: `sudo pacman -Syu timescaledb timescaledb-tune postgresql-libs`
+3. answer `Proceed with installation? [Y/n]` with `Y`
+4. run command: `sudo -u postgres initdb --locale=en_US.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data --data-checksums`
+5. run command: `sudo timescaledb-tune`
+6. answer `Is this correct? [(y)es/(n)o]:` with `y`
+7. answer `Is this okay? [(y)es/(n)o]:` with `y`
+8. answer `Tune memory/parallelism/WAL and other settings? [(y)es/(n)o]:` with `y`
+9. answer `Is this okay? [(y)es/(s)kip/(q)uit]:` with `y` each time
+10. run command: `sudo systemctl enable postgresql.service`
+11. run command: `sudo systemctl start postgresql.service`
+12. run command: `sudo -u postgres psql`
+13. answer `postgres=#` with `\password postgres`
+14. answer `Enter new password for user "postgres":` with `<PASSWORD>`
+15. answer `Enter it again:` with `<PASSWORD>`
+16. answer `postgres=#` with `\q`
+17. run command: `psql -d "postgres://postgres:<PASSWORD>@localhost:5432/postgres"`
+18. answer `postgres=#` with `CREATE EXTENSION IF NOT EXISTS timescaledb;`
+19. answer `postgres=#` with `\dx`
+20. answer `postgres=#` with `\q`
+21. expect rows: `SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'`
+</TestPlan>

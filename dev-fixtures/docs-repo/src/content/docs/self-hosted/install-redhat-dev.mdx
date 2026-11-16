@@ -1,0 +1,51 @@
+---
+title: Install self-hosted TimescaleDB on Red Hat dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for the distro matrix (#88, docs/adr/0008). It follows the Red Hat steps of `_install-self-hosted-redhat.mdx` (with the shared `_install-self-hosted-redhat-x-platform.mdx` partial) and the "add the extension" steps of `_add-timescaledb-to-a-database.mdx`, on a bare RHEL 9.8 target (the pay-as-you-go image, repos through RHUI), with the guide's commands verbatim. The guide builds its repo URLs from `rpm -E %{rhel}`, so it names no release; this is 9, to match Rocky 9. Step 9 is the guide's "disable the built-in PostgreSQL module" note, which the guide places after the install command; the install passes without it on RHEL 9.8, so the note is run in the guide's order and is harmless. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: redhat
+1. fork the service
+2. run command: `sudo yum install https://download.postgresql.org/pub/repos/yum/reporpms/EL-$(rpm -E %{rhel})-x86_64/pgdg-redhat-repo-latest.noarch.rpm`
+3. answer `Is this ok [y/N]:` with `y` each time
+4. run command:
+   `sudo tee /etc/yum.repos.d/timescale_timescaledb.repo <<EOL
+   [timescale_timescaledb]
+   name=timescale_timescaledb
+   baseurl=https://packagecloud.io/timescale/timescaledb/el/$(rpm -E %{rhel})/\$basearch
+   repo_gpgcheck=1
+   gpgcheck=0
+   enabled=1
+   gpgkey=https://packagecloud.io/timescale/timescaledb/gpgkey
+   sslverify=1
+   sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+   metadata_expire=300
+   EOL`
+5. run command: `sudo yum update`
+6. answer `Is this ok [y/N]:` with `y` each time
+7. run command: `sudo yum install timescaledb-2-postgresql-18 postgresql18`
+8. answer `Is this ok [y/N]:` with `y` each time
+9. run command: `sudo dnf -qy module disable postgresql`
+10. run command: `sudo /usr/pgsql-18/bin/postgresql-18-setup initdb`
+11. run command: `sudo timescaledb-tune --pg-config=/usr/pgsql-18/bin/pg_config`
+12. answer `Is this correct? [(y)es/(n)o]:` with `y`
+13. answer `Is this okay? [(y)es/(n)o]:` with `y`
+14. answer `Tune memory/parallelism/WAL and other settings? [(y)es/(n)o]:` with `y`
+15. answer `Is this okay? [(y)es/(s)kip/(q)uit]:` with `y` each time
+16. run command: `sudo systemctl enable postgresql-18`
+17. run command: `sudo systemctl start postgresql-18`
+18. run command: `sudo -u postgres psql`
+19. answer `postgres=#` with `\password postgres`
+20. answer `Enter new password for user "postgres":` with `<PASSWORD>`
+21. answer `Enter it again:` with `<PASSWORD>`
+22. answer `postgres=#` with `\q`
+23. run command: `psql -d "postgres://postgres:<PASSWORD>@localhost:5432/postgres"`
+24. answer `postgres=#` with `CREATE EXTENSION IF NOT EXISTS timescaledb;`
+25. answer `postgres=#` with `\dx`
+26. answer `postgres=#` with `\q`
+27. expect rows: `SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'`
+</TestPlan>

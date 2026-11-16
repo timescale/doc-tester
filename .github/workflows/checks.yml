@@ -1,0 +1,77 @@
+# Runs scripts/check-*.mjs: the checks that need no AWS, no browser and no secrets. Everything in this repo
+# that is live (a Console walk, an EC2 box) is a manual run; these are what keep a change from breaking the
+# plan grammar, the lint, the harness scripts or test-batch without anyone noticing (issue #33).
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04 # pinned: the checks lean on bash, sed, python3 and fake binaries, so an OS jump should be a change we make
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24] # README says Node >= 22
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+        env:
+          # lib/services.mjs throws on import when these are unset. The checks never touch a service, and
+          # these name nothing real.
+          DOCTEST_PROJECT_ID: ci-placeholder
+          DOCTEST_SERVICE_AWS: ci-placeholder
+          DOCTEST_SERVICE_AZURE: ci-placeholder
+          DOCTEST_TFSTATE_BUCKET: ci-placeholder
+
+  # Scans the commits a PR adds for committed credentials. No licensed Action: the gitleaks binary is
+  # downloaded at a pinned version and its SHA-256 is checked before it runs.
+  # The history was scanned clean when this was added (see .gitleaks.toml), so a failure here is new.
+  secrets:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # origin/<base>..HEAD needs the history
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: v8.30.1
+        run: |
+          set -euo pipefail
+          # sha256sum opens the names it reads from the checksum file, so keep the archive's release name.
+          ARCHIVE="gitleaks_${GITLEAKS_VERSION#v}_linux_x64.tar.gz"
+          CHECKSUMS="gitleaks_${GITLEAKS_VERSION#v}_checksums.txt"
+          BIN_DIR="${RUNNER_TEMP}/gitleaks-bin"
+          mkdir -p "$BIN_DIR"
+          cd "$RUNNER_TEMP"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/${ARCHIVE}" -o "${ARCHIVE}"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/${CHECKSUMS}" -o "${CHECKSUMS}"
+          grep " ${ARCHIVE}$" "${CHECKSUMS}" | sha256sum --check --status
+          tar -xzf "${ARCHIVE}" -C "$BIN_DIR" gitleaks
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          "$BIN_DIR/gitleaks" version
+      - name: Run gitleaks on the PR's commits
+        env:
+          BASE_REF: ${{ github.base_ref }} # via env, so the shell never sees interpolated event data
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --quiet
+          gitleaks git --config .gitleaks.toml --redact --exit-code=1 --no-banner \
+            --log-opts="origin/$BASE_REF..HEAD"

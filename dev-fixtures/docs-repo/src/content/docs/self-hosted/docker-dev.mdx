@@ -1,0 +1,22 @@
+---
+title: Docker dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for developing the Docker harness (`needs:`, `wait`, `expect output contains`, the `<Ctrl-D>` reply; docs/adr/0011). It is the Docker HA tab's flow plus the `mkdir` the real guide leaves out, which is the one place it deviates: on the real page that missing folder keeps the plan red on purpose. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: ubuntu
+path: docker-ha
+needs: docker, psql
+1. fork the service
+2. run command: `mkdir /home/ubuntu/pgdata`
+3. run command: `docker run -d --name timescaledb -p 5432:5432 -v /home/ubuntu/pgdata:/pgdata -e PGDATA=/pgdata -e POSTGRES_PASSWORD=password timescale/timescaledb-ha:pg18`
+4. wait up to 120s for postgres in container `timescaledb`
+5. run command: `psql -d "postgres://postgres:password@127.0.0.1:5432/postgres"`
+6. answer `postgres=#` with `\dx`
+7. answer `postgres=#` with `<Ctrl-D>`
+8. expect output contains `Enables scalable inserts and complex queries for time-series data`
+</TestPlan>

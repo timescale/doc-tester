@@ -1,0 +1,15 @@
+---
+title: Bare target dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for developing the bare target (`machine: bare`, docs/adr/0007) and the install-guide run that follows it. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: ubuntu
+1. fork the service
+2. run command: `test ! -d /etc/postgresql`
+3. run command: `lsb_release -cs`
+</TestPlan>

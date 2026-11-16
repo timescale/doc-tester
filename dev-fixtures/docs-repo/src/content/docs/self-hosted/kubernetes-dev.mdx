@@ -1,0 +1,133 @@
+---
+title: Kubernetes dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for developing the Kubernetes harness (`needs: kubernetes`, the pod form of `wait`, a manifest in a plan; docs/adr/0011, step 4b). It is the Kubernetes tab's flow as the guide gives it, with these deviations, so the steps after the Deployment stay covered while the real page is fixed:
+
+- The Deployment's heredoc ends with an `EOF` in column 0. The real page indents it, so a reader's paste never ends (the lint reports it, `heredoc never ends as shown`).
+- The page's `kubectl exec -it` psql session is answered at its prompt and ended with `<Ctrl-D>`, as the Docker fixture does, and the plan asserts on `\dx`'s output, which the real Kubernetes tab never shows.
+
+The plan waits for `test-pod` to be Ready before it execs into it, which the page does not say to do: a reader takes seconds between `kubectl run` and `kubectl exec`, and a bot at machine speed got `container not found ("test-pod")` on the first box run of this fixture. The `tigerdata-app` pod this plan applies crashes (the postgres server image with no `POSTGRES_PASSWORD`); the page promises nothing to assert about it, so the plan cannot see it.
+
+<TestPlan>
+target: self-hosted
+machine: bare
+os: ubuntu
+path: kubernetes
+needs: kubernetes
+1. fork the service
+2. run command: `kubectl create namespace tigerdata`
+3. run command: `kubectl config set-context --current --namespace=tigerdata`
+4. run command:
+     kubectl apply -f - <<EOF
+     apiVersion: v1
+     kind: PersistentVolumeClaim
+     metadata:
+       name: tigerdata-pvc
+     spec:
+       accessModes:
+         - ReadWriteOnce
+       resources:
+         requests:
+           storage: 10Gi
+     EOF
+5. run command:
+     kubectl apply -f - <<EOF
+     apiVersion: apps/v1
+     kind: StatefulSet
+     metadata:
+       name: timescaledb
+     spec:
+       serviceName: timescaledb
+       replicas: 1
+       selector:
+         matchLabels:
+           app: timescaledb
+       template:
+         metadata:
+           labels:
+             app: timescaledb
+         spec:
+           containers:
+             - name: timescaledb
+               image: 'timescale/timescaledb-ha:pg18'
+               env:
+                 - name: POSTGRES_USER
+                   value: postgres
+                 - name: POSTGRES_PASSWORD
+                   value: postgres
+                 - name: POSTGRES_DB
+                   value: postgres
+                 - name: PGDATA
+                   value: /var/lib/postgresql/data/pgdata
+               ports:
+                 - containerPort: 5432
+               volumeMounts:
+                 - mountPath: /var/lib/postgresql/data
+                   name: tigerdata-storage
+           volumes:
+             - name: tigerdata-storage
+               persistentVolumeClaim:
+                 claimName: tigerdata-pvc
+     EOF
+6. wait up to 300s for postgres in pod `timescaledb-0`
+7. run command:
+     kubectl apply -f - <<EOF
+     apiVersion: v1
+     kind: Service
+     metadata:
+      name: timescaledb
+     spec:
+      selector:
+        app: timescaledb
+      ports:
+        - protocol: TCP
+          port: 5432
+          targetPort: 5432
+      type: ClusterIP
+     EOF
+8. run command:
+     kubectl create secret generic tigerdata-secret \
+     --from-literal=PGHOST=timescaledb \
+     --from-literal=PGPORT=5432 \
+     --from-literal=PGDATABASE=postgres \
+     --from-literal=PGUSER=postgres \
+     --from-literal=PGPASSWORD=postgres
+9. run command:
+     kubectl apply -f - <<EOF
+     apiVersion: apps/v1
+     kind: Deployment
+     metadata:
+       name: tigerdata-app
+     spec:
+       replicas: 1
+       selector:
+         matchLabels:
+           app: tigerdata-app
+       template:
+         metadata:
+           labels:
+             app: tigerdata-app
+         spec:
+           containers:
+           - name: tigerdata-container
+             image: postgres:latest
+             envFrom:
+               - secretRef:
+                   name: tigerdata-secret
+     EOF
+10. run command:
+     kubectl run test-pod --image=postgres --restart=Never \
+     --env="PGHOST=$(kubectl get secret tigerdata-secret -o=jsonpath='{.data.PGHOST}' | base64 --decode)" \
+     --env="PGPORT=$(kubectl get secret tigerdata-secret -o=jsonpath='{.data.PGPORT}' | base64 --decode)" \
+     --env="PGDATABASE=$(kubectl get secret tigerdata-secret -o=jsonpath='{.data.PGDATABASE}' | base64 --decode)" \
+     --env="PGUSER=$(kubectl get secret tigerdata-secret -o=jsonpath='{.data.PGUSER}' | base64 --decode)" \
+     --env="PGPASSWORD=$(kubectl get secret tigerdata-secret -o=jsonpath='{.data.PGPASSWORD}' | base64 --decode)" \
+     -- sleep infinity
+11. wait up to 120s for pod `test-pod` ready
+12. run command: `kubectl exec -it test-pod -- bash -c "psql -h \$PGHOST -U \$PGUSER -d \$PGDATABASE"`
+13. answer `postgres=#` with `\dx`
+14. answer `postgres=#` with `<Ctrl-D>`
+15. expect output contains `Enables scalable inserts and complex queries for time-series data`
+</TestPlan>

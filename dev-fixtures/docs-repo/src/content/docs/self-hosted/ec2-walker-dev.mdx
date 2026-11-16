@@ -1,0 +1,16 @@
+---
+title: EC2 walker dev fixture
+products: [self_hosted]
+---
+
+Synthetic, throwaway fixture for developing `lib/walk-ec2.mjs`. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+
+<TestPlan>
+target: self-hosted
+1. fork the service
+2. run SQL: `CREATE TABLE doctest_ec2_walker (id int primary key, note text);`
+3. run SQL: `INSERT INTO doctest_ec2_walker VALUES (1, 'hello from the ec2 walker');`
+4. expect rows: `SELECT 1 FROM doctest_ec2_walker WHERE id = 1`
+5. run command: `systemctl is-active postgresql`
+6. expect no rows: `SELECT 1 FROM doctest_ec2_walker WHERE id = 999`
+</TestPlan>
