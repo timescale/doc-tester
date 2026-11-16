@@ -4,7 +4,7 @@ status: accepted
 
 # The EC2 slot is an exclusive lease in the state bucket
 
-ADR 0005 gives every self-hosted run its own ad hoc box, but all runs share one **slot**: one Terraform state key, one `aws_instance.ec2`. Nothing stopped a second run from starting while the first was still walking. It found the box in state, `apply` did nothing or (after #88, when an AMI or `user_data` differs per distro) replaced it, and whichever run finished first destroyed the box under the other. The survivor failed with SSM errors that read like a docs bug. This happened on 2026-10-15, while two people were testing: one run's box was replaced mid-walk, and the cleanup then failed on Terraform's state lock.
+ADR 0005 gives every self-hosted run its own ad hoc box, but all runs share one **slot**: one Terraform state key, one `aws_instance.ec2`. Nothing stopped a second run from starting while the first was still walking. It found the box in state, `apply` did nothing or (once an AMI or `user_data` differs per distro) replaced it, and whichever run finished first destroyed the box under the other. The survivor failed with SSM errors that read like a docs bug. This happened on 2026-10-15, while two people were testing: one run's box was replaced mid-walk, and the cleanup then failed on Terraform's state lock.
 
 Terraform's own lock (`use_lockfile = true`) cannot help: it is held for one terraform command, and the overlap is between commands. The project lock (`lib/lock.mjs`) is about the Console, and fails open when its host is unreachable.
 
@@ -23,4 +23,4 @@ The slot is now an **exclusive lease**: an object in the tfstate bucket (`doc-te
 - *Refuse when state holds an instance, with no lock.* Two runs starting together both see an empty state and both proceed. Only an atomic create closes that, and a six-process race is one of `scripts/live-check-slot.mjs`'s checks.
 - *DynamoDB for the lock.* Not in `docs-tester`'s boundary, and S3 conditional writes need nothing new.
 
-Amends ADR 0005 (one slot, now exclusive). Related: ADR 0003, 0008; #88, #100.
+Amends ADR 0005 (one slot, now exclusive). Related: ADR 0003, 0008.

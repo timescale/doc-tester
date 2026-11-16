@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Proof of concept: read a Tiger Cloud docs page, follow its steps against a real service, test them, and capture screenshots.",
+  "description": "Runs the test plans on Tiger Data docs pages against Tiger Cloud and self-hosted TimescaleDB, and reports which documented steps fail.",
   "scripts": {
     "login": "node scripts/login.mjs",
     "test-page": "node scripts/test-page.mjs",

@@ -1,6 +1,6 @@
 # Runs scripts/check-*.mjs: the checks that need no AWS, no browser and no secrets. Everything in this repo
 # that is live (a Console walk, an EC2 box) is a manual run; these are what keep a change from breaking the
-# plan grammar, the lint, the harness scripts or test-batch without anyone noticing (issue #33).
+# plan grammar, the lint, the harness scripts or test-batch without anyone noticing.
 name: checks
 
 on:

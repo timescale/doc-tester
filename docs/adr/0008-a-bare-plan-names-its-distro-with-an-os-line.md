@@ -21,4 +21,4 @@ A pre-installed target stays Ubuntu only, enforced by a Terraform precondition (
 - *Distros as new `target:` values* (`self-hosted-ubuntu`, …). A distro is not a product, and ADR 0006 says a new target is a row, a provisioner and a walker; that would be six near-identical ones.
 - *A plan file per distro, selected by a CLI flag.* It sidesteps the parser but moves "where does this run" out of the plan, the inference-by-convention ADR 0004 rejected.
 
-Amends ADR 0006 (one block per product). Related: ADR 0004, 0005, 0007; #88.
+Amends ADR 0006 (one block per product). Related: ADR 0004, 0005, 0007.

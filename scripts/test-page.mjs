@@ -5,8 +5,9 @@
 // What it does:
 //   1. finds the page in the local docs repo and reads its real steps (following partials),
 //   2. decides whether the page is testable and says why if it isn't,
-//   3. prompts for any values the page needs (a connection string, and so on) before it starts,
-//   4. walks every testable procedure on the live Console, screenshotting each step,
+//   3. reads the values the plan names from DOCTEST_INPUT_* (a run never prompts),
+//   4. walks the plan on the live Console, screenshotting each step, or on a throwaway EC2 box
+//      for a self-hosted plan,
 //   5. writes a PASS/FAIL report (terminal summary + screenshots/report.html).
 //
 // Console login happens by itself: the run probes the live Console and logs in headlessly with

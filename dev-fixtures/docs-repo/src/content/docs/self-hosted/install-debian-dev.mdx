@@ -3,7 +3,7 @@ title: Install self-hosted TimescaleDB on Debian dev fixture
 products: [self_hosted]
 ---
 
-Synthetic, throwaway fixture for the install-guide spike (#86, docs/adr/0007). It follows the Debian steps of `_install-self-hosted-debian.mdx` (with the shared Debian start and end partials) and the "add the extension" steps of `_add-timescaledb-to-a-database.mdx`, on a bare target, with the guide's commands verbatim. **One step is not in the guide:** step 2, `sudo apt update`. A stock Debian 13 cloud image has no apt package lists, so the guide's first step (`apt install gnupg postgresql-common …`) fails with `Unable to locate package` until something runs `apt update`; Ubuntu's image ships its lists. It is reported as a docs finding, and this step comes out when the guide is fixed. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+Synthetic, throwaway fixture for the install-guide spike (docs/adr/0007). It follows the Debian steps of `_install-self-hosted-debian.mdx` (with the shared Debian start and end partials) and the "add the extension" steps of `_add-timescaledb-to-a-database.mdx`, on a bare target, with the guide's commands verbatim. **One step is not in the guide:** step 2, `sudo apt update`. A stock Debian 13 cloud image has no apt package lists, so the guide's first step (`apt install gnupg postgresql-common …`) fails with `Unable to locate package` until something runs `apt update`; Ubuntu's image ships its lists. It is reported as a docs finding, and this step comes out when the guide is fixed. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
 
 <TestPlan>
 target: self-hosted

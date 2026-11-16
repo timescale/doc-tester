@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks `test-batch --resume` (issue #115): what counts as done, the flags guard, a unique batch
+// Checks `test-batch --resume`: what counts as done, the flags guard, a unique batch
 // directory, and the exit code. The decisions are pure functions in lib/batch-resume.mjs, tested directly;
 // then the real script runs against a stub child (DOCTEST_PAGE_SCRIPT) in a throwaway batch root
 // (DOCTEST_BATCH_ROOT), so no browser, no box and none of the real batch history is touched. No AWS.

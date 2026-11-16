@@ -6,8 +6,8 @@
 //
 //   node scripts/ec2-smoke-test.mjs
 //
-// This proves infra + IAM + SSM + the TimescaleDB install work together end to end. It does not
-// wire the target into scripts/test-page.mjs or lib/walk.mjs — see docs/adr/ and issue #52.
+// This proves infra + IAM + SSM + the TimescaleDB install work together end to end, without a plan.
+// A real run reaches the same box through scripts/test-page.mjs and lib/walk-ec2.mjs.
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

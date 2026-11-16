@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks the two places a plan's SQL is rewritten before it reaches a database (issue #33): the text the
+// Checks the two places a plan's SQL is rewritten before it reaches a database: the text the
 // Console walker types into the SQL editor (`prepareSqlForInsert`, with `stripSqlLineComments` under it),
 // and the DO block `expect rows:` compiles to. No AWS, no browser, no database: the second is checked as
 // the text it produces.
@@ -46,7 +46,7 @@ console.log("prepareSqlForInsert: what it does today where that is a limit");
 check("known (documented in the source): a TAGGED dollar body is not recognised, so its comments go and its layout collapses", () => {
   assert.equal(prep("DO $t$ BEGIN  -- c\n  NULL;  END $t$;"), "DO $t$ BEGIN NULL; END $t$;");
 });
-check("whitespace INSIDE a string literal or quoted identifier is kept: `'two  spaces'` is typed as written (#141)", () => {
+check("whitespace INSIDE a string literal or quoted identifier is kept: `'two  spaces'` is typed as written", () => {
   assert.equal(prep(`SELECT ${Q}two  spaces${Q}, ${Q}a\tb${Q}`), `SELECT ${Q}two  spaces${Q}, ${Q}a\tb${Q}`);
   assert.equal(prep('SELECT "a  b"   FROM t'), 'SELECT "a  b" FROM t');
 });
@@ -54,7 +54,7 @@ check("whitespace AROUND a literal still collapses (the control for the one abov
   assert.equal(prep(`SELECT   ${Q}x  y${Q}\n   ,\n  ${Q}z${Q}`), `SELECT ${Q}x  y${Q} , ${Q}z${Q}`);
   assert.equal(prep(`SELECT ${Q}it${Q}${Q}s  ok${Q}   FROM t`), `SELECT ${Q}it${Q}${Q}s  ok${Q} FROM t`);
 });
-check("a line break INSIDE a literal or quoted identifier is refused, loudly: a one-line write cannot carry it (#36)", () => {
+check("a line break INSIDE a literal or quoted identifier is refused, loudly: a one-line write cannot carry it", () => {
   assert.throws(() => prep(`SELECT ${Q}a\nb${Q}`), /line break.*string literal/);
   assert.throws(() => prep(`SELECT ${Q}a\r\nb${Q}`), /line break/);
   assert.throws(() => prep('SELECT "a\nb" FROM t'), /line break/);
@@ -69,7 +69,7 @@ check("a quote inside a /* block comment */ is comment text: it neither opens a 
 check("a line break inside a comment that mentions a quote does not trip the refusal", () => {
   assert.equal(prep(`SELECT 1 -- it${Q}s\nFROM t`), "SELECT 1 FROM t");
 });
-check("a `--` inside a /* block comment */ is comment text: the block is kept whole and the SQL after it survives (#140)", () => {
+check("a `--` inside a /* block comment */ is comment text: the block is kept whole and the SQL after it survives", () => {
   assert.equal(prep("/* a -- b */ SELECT 1"), "/* a -- b */ SELECT 1");
   assert.equal(prep("SELECT 1 /* x -- y */ + 2"), "SELECT 1 /* x -- y */ + 2");
 });
@@ -134,7 +134,7 @@ check("a query inside the block is not rewritten: its own quotes and operators s
   const q = "SELECT 1 FROM t WHERE name = 'a''b' AND n > 3";
   assert.ok(sqlOf(`expect rows: ${q}`).includes(`EXISTS (${q}\n)`));
 });
-check("a `-- comment` on the LAST line of the query ends at a newline, so it cannot take the closing parenthesis (#142)", () => {
+check("a `-- comment` on the LAST line of the query ends at a newline, so it cannot take the closing parenthesis", () => {
   // psql ends a `--` comment only at a newline. Run against a real Postgres, the one-line form
   // `EXISTS (SELECT 1 -- why) THEN ...` is "mismatched parentheses at end of input".
   const sql = sqlOf("expect rows: SELECT 1 -- why");
@@ -146,7 +146,7 @@ check("a comment on an earlier line of a multi-line query is unchanged by that (
   assert.equal(p.steps[0].actions[0].sql, BLOCK("NOT ", "SELECT 1 -- why\nFROM t", "expected at least one row, got none"));
 });
 
-console.log("describeEditorMismatch: say where the editor text diverges (#152)");
+console.log("describeEditorMismatch: say where the editor text diverges");
 check("extra characters at the end are named, with the position and what came before them", () => {
   const m = mism("SELECT f(1);", "SELECT f(1);))");
   assert.match(m, /2 extra characters? at the end/);

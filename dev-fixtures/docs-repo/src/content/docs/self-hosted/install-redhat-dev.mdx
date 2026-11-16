@@ -3,7 +3,7 @@ title: Install self-hosted TimescaleDB on Red Hat dev fixture
 products: [self_hosted]
 ---
 
-Synthetic, throwaway fixture for the distro matrix (#88, docs/adr/0008). It follows the Red Hat steps of `_install-self-hosted-redhat.mdx` (with the shared `_install-self-hosted-redhat-x-platform.mdx` partial) and the "add the extension" steps of `_add-timescaledb-to-a-database.mdx`, on a bare RHEL 9.8 target (the pay-as-you-go image, repos through RHUI), with the guide's commands verbatim. The guide builds its repo URLs from `rpm -E %{rhel}`, so it names no release; this is 9, to match Rocky 9. Step 9 is the guide's "disable the built-in PostgreSQL module" note, which the guide places after the install command; the install passes without it on RHEL 9.8, so the note is run in the guide's order and is harmless. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
+Synthetic, throwaway fixture for the distro matrix (docs/adr/0008). It follows the Red Hat steps of `_install-self-hosted-redhat.mdx` (with the shared `_install-self-hosted-redhat-x-platform.mdx` partial) and the "add the extension" steps of `_add-timescaledb-to-a-database.mdx`, on a bare RHEL 9.8 target (the pay-as-you-go image, repos through RHUI), with the guide's commands verbatim. The guide builds its repo URLs from `rpm -E %{rhel}`, so it names no release; this is 9, to match Rocky 9. Step 9 is the guide's "disable the built-in PostgreSQL module" note, which the guide places after the install command; the install passes without it on RHEL 9.8, so the note is run in the guide's order and is harmless. Never a real docs page, never merged upstream — see `CONTEXT.md`'s "the dev fixture."
 
 <TestPlan>
 target: self-hosted

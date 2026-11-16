@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks the download step (lib/fixtures.mjs, issue #33 / the security audit of 2026-10-22): a plan's
+// Checks the download step (lib/fixtures.mjs): a plan's
 // `download <url>` is fetched with a timeout, a size cap and a redirect rule, so a slow, huge or
 // redirecting server cannot hang a run, fill a disk, or walk the fetch off https. No network: `fetch`
 // is a stub that returns the responses each case needs.
