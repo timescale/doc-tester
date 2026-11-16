@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Checks the two pure functions in lib/report.mjs that decide what a run's report says (issue #33):
-// `overallVerdict`, which grades a page and which test-batch's resume and exit code depend on (#134), and
+// Checks the two pure functions in lib/report.mjs that decide what a run's report says:
+// `overallVerdict`, which grades a page and which test-batch's resume and exit code depend on, and
 // `collapseCascades`, which folds one cause reported many times into one line. No AWS, no browser.
 //
 // A check that only passes proves nothing, so most of these pair a case that must collapse (or win) with the

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Checks savedRunSince (lib/report.mjs), which keeps test-batch from grading a page with the previous
-// run's last-run.json (#114). Temp files only: no docs checkout, no AWS.
+// run's last-run.json. Temp files only: no docs checkout, no AWS.
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";

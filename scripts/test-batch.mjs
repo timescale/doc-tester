@@ -1,9 +1,9 @@
-// Run test-page over MANY pages: a list you provide, a section, or the whole inventory.
+// Run test-page over MANY pages: a list you provide, a section, or every page that has a plan.
 //
 //   node scripts/test-batch.mjs --pages pages.csv      one slug or URL per line (# comments ok,
 //                                                      CSV: the first column is used)
-//   node scripts/test-batch.mjs --section integrate    inventory slugs starting with this prefix
-//   node scripts/test-batch.mjs --all                  every page in the inventory
+//   node scripts/test-batch.mjs --section integrate    pages with a plan under this prefix
+//   node scripts/test-batch.mjs --all                  every page that has a plan
 //   node scripts/test-batch.mjs --section learn --resume   pick up the last batch where it stopped
 //   node scripts/test-batch.mjs --section build --products self-hosted
 //                                                      only the self-hosted side of each plan; a page
@@ -21,7 +21,7 @@
 // Sequential, also deliberately. Parallel runs would collide on the pre-run project reset (it is
 // project-wide), on the standing service, and on the one Console session.
 //
-// Wall clock is the constraint: at roughly 25 minutes a page, --all over 193 pages is days, so a
+// Wall clock is the constraint: at roughly 25 minutes a page, --all over every page with a plan is days, so a
 // batch is an overnight or CI job and --section is the realistic daily unit. Hence resumability: a
 // crash or a Ctrl-C must not mean re-running the pages that already passed.
 import { spawn } from "node:child_process";
@@ -130,7 +130,7 @@ if (!entries?.length) {
   Usage:
     node scripts/test-batch.mjs --pages <file>      one slug or URL per line
     node scripts/test-batch.mjs --section <prefix>  e.g. integrate, deploy/tiger-cloud
-    node scripts/test-batch.mjs --all               every inventory page
+    node scripts/test-batch.mjs --all               every page that has a plan
     ... --resume                                    continue the most recent batch
     ... --dry-run                                   list what would run, and for how long
     ... --products cloud,self-hosted                only these products of each plan
@@ -247,7 +247,7 @@ function runPage(p) {
       let archive = null;
       let targets = null; // per-product verdicts, as the run saved them
       // Only a result this child wrote: one that is older is the previous run's, and a child that never
-      // got as far as saving one must keep its process-level verdict (#114).
+      // got as far as saving one must keep its process-level verdict.
       const saved = savedRunSince(started);
       if (saved?.meta?.url === p.url) { verdict = overallVerdict(saved.result); targets = saved.result?.targets || null; }
       const m = out.join("").match(/Archived: (\S+)/);

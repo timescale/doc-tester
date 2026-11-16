@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks the step slicer behind `test-page --from` and `--until` (lib/slice.mjs, issue #33): resolving a
+// Checks the step slicer behind `test-page --from` and `--until` (lib/slice.mjs): resolving a
 // number or a piece of a step's text, refusing a range that is empty, and which steps a slice keeps.
 // No AWS, no browser.
 //
