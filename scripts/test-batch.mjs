@@ -2,7 +2,7 @@
 //
 //   node scripts/test-batch.mjs --pages pages.csv      one slug or URL per line (# comments ok,
 //                                                      CSV: the first column is used)
-//   node scripts/test-batch.mjs --section integrate    inventory slugs starting with this prefix
+//   node scripts/test-batch.mjs --section integrate    pages with a plan under this prefix
 //   node scripts/test-batch.mjs --all                  every page that has a plan
 //   node scripts/test-batch.mjs --section learn --resume   pick up the last batch where it stopped
 //   node scripts/test-batch.mjs --section build --products self-hosted
