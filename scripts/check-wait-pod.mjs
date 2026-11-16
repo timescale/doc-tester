@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks the pod forms of `wait` (docs/adr/0011, step 4b): ``wait up to Ns for postgres in pod `name` `` and
+// Checks the pod forms of `wait` (docs/adr/0011): ``wait up to Ns for postgres in pod `name` `` and
 // ``wait up to Ns for pod `name` ready``, the second for a pod that runs no postgres (the guide's
 // `test-pod`, which runs `sleep infinity`). The grammar, the lint's name rule, and the probe scripts' own
 // logic, run here against a fake `kubectl` so each branch (ready after a while, never ready, still pulling
