@@ -16,6 +16,7 @@ fi
 
 export AWS_PROFILE="${DOCTEST_AWS_PROFILE:-docs-tester}"
 
+./init.sh
 if [ -n "${DOCTEST_TF_AUTO_APPROVE:-}" ]; then
   terraform destroy -auto-approve
 else

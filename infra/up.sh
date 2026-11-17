@@ -16,7 +16,7 @@ fi
 
 export AWS_PROFILE="${DOCTEST_AWS_PROFILE:-docs-tester}"
 
-terraform init -backend-config="bucket=${DOCTEST_TFSTATE_BUCKET:?set DOCTEST_TFSTATE_BUCKET in .env (see .env.example)}"
+./init.sh
 if [ -n "${DOCTEST_TF_AUTO_APPROVE:-}" ]; then
   terraform apply -auto-approve
 else
