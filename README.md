@@ -94,11 +94,15 @@ endpoints and VPC peering entries before and after it walks a page (see [Safety]
 npm install
 npx playwright install chromium
 cp .env.example .env
-tiger auth login          # OAuth — no API keys in .env
+tiger auth login          # OAuth — no API keys in .env; pick the test project when it asks
 npm run login             # optional: headless Console login, session saved to .auth/
 ```
 
 Then fill in `.env` (see [Configuration](#configuration)). `.env` and `.auth/` are git-ignored.
+
+The tool acts on whichever project the Tiger CLI is logged into, so that has to be the test project:
+the one whose id is in `DOCTEST_PROJECT_ID`. `tiger project list` shows the current one, and
+`tiger project use <id>` switches.
 
 The Console account must sign in with an email and a password; an account that uses SSO cannot log in
 headlessly. `npm run login` is optional: a run probes the Console and logs in by itself when the
