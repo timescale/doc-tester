@@ -459,6 +459,7 @@ scripts/
   ec2-smoke-test.mjs standalone infra smoke test (extension + hypertable) — not the same path test-page.mjs walks
 infra/
   *.tf               the self-hosted TimescaleDB EC2 target (Terraform)
+  init.sh             terraform init against the state bucket; up.sh, down.sh and the pre-flight call it
   up.sh / down.sh     provision / tear down
   tunnel.sh           open the SSM port-forward — the only way in, no public inbound port exists
   templates/          cloud-init for the pre-installed box, and the SSM agent bootstrap for a bare one
