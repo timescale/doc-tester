@@ -516,3 +516,7 @@ CONTEXT.md            the project's vocabulary
 
 Open an issue in this repository. A problem with a docs page itself belongs in
 [timescale/Tiger-Data-Docs](https://github.com/timescale/Tiger-Data-Docs).
+
+## License
+
+[Apache License 2.0](LICENSE).
