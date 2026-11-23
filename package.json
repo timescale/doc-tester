@@ -1,6 +1,7 @@
 {
   "name": "doc-tester",
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "description": "Runs the test plans on Tiger Data docs pages against Tiger Cloud and self-hosted TimescaleDB, and reports which documented steps fail.",
