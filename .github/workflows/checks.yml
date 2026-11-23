@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   checks:
-    runs-on: ubuntu-24.04 # pinned: the checks lean on bash, sed, python3 and fake binaries, so an OS jump should be a change we make
+    runs-on: ubuntu-26.04 # pinned: the checks lean on bash, sed, python3 and fake binaries, so an OS jump should be a change we make
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -44,7 +44,7 @@ jobs:
   # The history was scanned clean when this was added (see .gitleaks.toml), so a failure here is new.
   secrets:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
