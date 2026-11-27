@@ -30,14 +30,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm run check
-        env:
-          # lib/services.mjs throws on import when these are unset. The checks never touch a service, and
-          # these name nothing real.
-          DOCTEST_PROJECT_ID: ci-placeholder
-          DOCTEST_SERVICE_AWS: ci-placeholder
-          DOCTEST_SERVICE_AZURE: ci-placeholder
-          DOCTEST_TFSTATE_BUCKET: ci-placeholder
+      - run: npm run check # no configuration: the checks never touch a service, and nothing needs the ids until a run does
 
   # Scans the commits a PR adds for committed credentials. No licensed Action: the gitleaks binary is
   # downloaded at a pinned version and its SHA-256 is checked before it runs.

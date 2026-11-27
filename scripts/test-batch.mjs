@@ -37,6 +37,9 @@ import { isSettled, splitResume, flagsMismatch, uniqueBatchName, batchExitCode }
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DOCS = process.env.DOCS_REPO || join(process.env.HOME, "Timescale", "Tiger-Data-Docs");
 const PAGE_TIMEOUT_MS = Number(process.env.DOCTEST_PAGE_TIMEOUT_MS || 45 * 60 * 1000);
+// How long a page that hit the ceiling gets to clean up (delete its fork, destroy its box) after it is
+// asked to stop, before it is killed. An EC2 destroy is the slow part, a minute or two.
+const PAGE_GRACE_MS = Number(process.env.DOCTEST_PAGE_GRACE_MS || 3 * 60 * 1000);
 const BASE = "https://www.tigerdata.com/docs/";
 
 const argv = process.argv.slice(2);
@@ -219,6 +222,24 @@ if (again.length) {
   for (const { page, verdict } of again) console.log(`    ${verdict || "no verdict"}  ${page.url.replace(BASE, "")}`);
 }
 
+// --- Ctrl-C, SIGTERM or a hangup: the page in flight is asked to stop (it cleans up and reports,
+// lib/stop.mjs), no further page starts, and the batch exits 130 once the child is gone. The child is
+// spawned detached, in a session of its own, so a terminal's Ctrl-C reaches it only through this
+// forward, exactly once: a second Ctrl-C to the child means "quit without cleanup", and the terminal
+// would otherwise deliver that second one by itself. A second Ctrl-C here is forwarded too, and means
+// the same thing. On Windows a forwarded signal is a plain terminate, so there is no grace there.
+let stopping = null; // the signal, once one arrived
+let stoppingAt = null;
+let current = null; // the child in flight
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => {
+    if (!stopping) console.log(`\n  ${sig}: letting the current page stop and clean up, then ending the batch. Pick it up later with --resume; Ctrl-C again quits the page without cleanup.`);
+    stopping ??= sig;
+    stoppingAt ??= Date.now();
+    current?.kill(sig);
+  });
+}
+
 // --- run one page in its own process; never let a failure stop the batch
 function runPage(p) {
   return new Promise((resolve) => {
@@ -228,8 +249,23 @@ function runPage(p) {
     const child = spawn(process.execPath, [PAGE_SCRIPT, p.url, ...(products ? ["--products", products.join(",")] : []), ...(osList ? ["--os", osList.join(",")] : [])], {
       cwd: ROOT,
       env: { ...process.env, NO_OPEN: "1" }, // a batch must not open 200 browser windows
+      detached: true, // its own session (setsid): signals reach it through the forward above, not from the terminal
     });
-    const timer = setTimeout(() => child.kill("SIGKILL"), PAGE_TIMEOUT_MS);
+    current = child;
+    let exitedAt = null;
+    child.on("exit", () => (exitedAt = Date.now()));
+    // The ceiling asks the page to stop first, so it deletes its fork or destroys its box; only a page
+    // that does not finish cleaning up within the grace is killed. A straight SIGKILL left the fork or
+    // the box running, billing, until someone noticed.
+    let timedOut = false;
+    let killer = null;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      console.log(`\n    ⏱ page ceiling (${PAGE_TIMEOUT_MS} ms): asking the run to stop and clean up; killed after ${PAGE_GRACE_MS} ms if it does not`);
+      child.kill("SIGTERM");
+      // The whole session, not just the node process: its browser, psql and CLI children would otherwise outlive it.
+      killer = setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); } }, PAGE_GRACE_MS);
+    }, PAGE_TIMEOUT_MS);
     const collect = (b) => {
       const s = b.toString();
       out.push(s);
@@ -239,17 +275,25 @@ function runPage(p) {
     child.stderr.on("data", collect);
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      clearTimeout(killer);
+      current = null;
       writeFileSync(log, out.join(""));
       // Grade from the run's own saved result, using the report's rule rather than a copy of it.
       // Exit 2 is test-page refusing its input before it ran anything (a plan error, drift from the
       // guide, a bad flag): not a crash, and not a result either.
-      let verdict = signal ? "timeout" : code === 0 ? "unknown" : code === 2 ? "refused" : "crashed";
+      //
+      // A page cut short by the ceiling or by a signal keeps that verdict even when it saved a result:
+      // what it saved says `stopped` for the steps it never reached, and a resume must run the page
+      // again, not take a partial walk as the answer.
+      // A signal that landed after the child had already exited did not interrupt it.
+      const cut = timedOut ? "timeout" : stopping && !(exitedAt && stoppingAt > exitedAt) ? "interrupted" : null;
+      let verdict = cut || (signal ? "crashed" : code === 0 ? "unknown" : code === 2 ? "refused" : "crashed");
       let archive = null;
       let targets = null; // per-product verdicts, as the run saved them
       // Only a result this child wrote: one that is older is the previous run's, and a child that never
       // got as far as saving one must keep its process-level verdict.
       const saved = savedRunSince(started);
-      if (saved?.meta?.url === p.url) { verdict = overallVerdict(saved.result); targets = saved.result?.targets || null; }
+      if (saved?.meta?.url === p.url) { if (!cut) verdict = overallVerdict(saved.result); targets = saved.result?.targets || null; }
       const m = out.join("").match(/Archived: (\S+)/);
       if (m) archive = m[1];
       resolve({ ...p, verdict, targets, archive, log, code, signal });
@@ -260,6 +304,7 @@ function runPage(p) {
 const results = [];
 for (const p of runnable) {
   if (isSettled(state.done[p.url]?.verdict)) { results.push(state.done[p.url]); continue; }
+  if (stopping) break; // the pages after the interrupted one are untouched, and --resume starts there
   console.log(`\n${"=".repeat(70)}\n  ${p.title}\n  ${p.url}\n${"=".repeat(70)}`);
   const r = await runPage(p);
   state.done[p.url] = r;
@@ -268,7 +313,7 @@ for (const p of runnable) {
 }
 
 // --- summary
-const GLYPH = { pass: "✓", fail: "✗", blocked: "⚠", stopped: "🛑", skipped: "—", timeout: "⏱", crashed: "💥", refused: "🚫", unknown: "?" };
+const GLYPH = { pass: "✓", fail: "✗", blocked: "⚠", stopped: "🛑", skipped: "—", timeout: "⏱", interrupted: "🛑", crashed: "💥", refused: "🚫", unknown: "?" };
 // One column per product the tool knows (docs/adr/0006). A cell is the product's own verdict, "not
 // run" when --products left it out, "not covered" when the page is tagged with it and no block
 // targets it, and blank when the page is not tagged with it at all. Informational: nothing here
@@ -303,4 +348,9 @@ if (noPlan.length) {
   for (const p of noPlan) console.log(`    ${p.url.replace(BASE, "")}${p.error ? `  (${p.error})` : ""}`);
 }
 console.log(`\n  summary: ${join(dir, "summary.md")}\n`);
+if (stopping) {
+  const left = runnable.length - results.length;
+  console.log(`  interrupted (${stopping}) after ${results.length} of ${runnable.length} page(s); ${left} not started. Continue with:\n    node scripts/test-batch.mjs ${argv.join(" ")}${argv.includes("--resume") ? "" : " --resume"}\n`);
+  process.exit(130);
+}
 process.exit(batchExitCode(results));

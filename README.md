@@ -158,8 +158,10 @@ project's services list and reports every service-scoped control as missing.
 One of `--pages`, `--section` or `--all` is required. One child process per page, sequential. Each
 batch gets a folder under `screenshots/batches/` with per-page logs, a `state.json` and a
 `summary.md`. Pages with no plan, or with a plan error, are listed, never spawned. A page failing
-never stops the batch. The batch exits 1 when any page failed or ended without a verdict (a timeout,
-a crash, a refusal), and 0 otherwise.
+never stops the batch. A page past the ceiling is asked to stop and clean up, and killed only if it
+has not exited after the grace (the grace has to cover one terraform destroy). Ctrl-C lets the page
+in flight clean up, starts no further page, and exits 130; `--resume` runs that page again. The batch exits 1 when any page failed or ended without a
+verdict (a timeout, an interrupt, a crash, a refusal), and 0 otherwise.
 
 ### Linting and coverage
 
@@ -195,25 +197,24 @@ inside `dev-fixtures/` is fixture mode, and a copy of a fixture kept anywhere el
 npm run check
 ```
 
-Runs the 16 `scripts/check-*.mjs` scripts. They need no AWS, no browser and no secrets, only the four
-variables `DOCTEST_PROJECT_ID`, `DOCTEST_SERVICE_AWS`, `DOCTEST_SERVICE_AZURE` and
-`DOCTEST_TFSTATE_BUCKET` set to any value. `.github/workflows/checks.yml` runs them on every pull
+Runs the `scripts/check-*.mjs` scripts. They need no AWS, no browser, no secrets and no
+configuration. `.github/workflows/checks.yml` runs them on every pull
 request and on pushes to `main`, on Node 22 and 24, and scans a pull request's commits for committed
 credentials.
 
 ## Configuration
 
 Set these in `.env` at the repository root, or in the environment. Nothing in git names a service: a
-missing value throws on import rather than defaulting to an id that used to be right.
-
-Required by `test-page`, `test-batch`, `build-report`, `scripts/slot.mjs` and `npm run check`. `lint-plan`,
-`plan-sql` and `npm run login` do not read them:
+missing value stops the run that needs it, by name, rather than defaulting to an id that used to be
+right. A Tiger Cloud run needs the project and the standing services; a self-hosted run,
+`scripts/slot.mjs` and `npm run check:live` need the state bucket; `npm run check`, `lint-plan`,
+`plan-sql`, `build-report` and `npm run login` need none of them.
 
 | Variable | Purpose |
 | --- | --- |
 | `DOCTEST_PROJECT_ID` | project holding the standing services |
 | `DOCTEST_SERVICE_AWS` / `_AZURE` | the standing service per cloud |
-| `DOCTEST_TFSTATE_BUCKET` | S3 bucket that holds the Terraform state and the EC2 slot lease. A Tiger Cloud-only setup still has to set it, to any value |
+| `DOCTEST_TFSTATE_BUCKET` | S3 bucket that holds the Terraform state and the EC2 slot lease |
 
 Required for a Tiger Cloud run:
 
@@ -230,6 +231,7 @@ Optional:
 | `DOCTEST_SHOTS` | `evidence` (default), `doc-update`, or `none` |
 | `DOCTEST_STEP_CEILING_MS` | per-step ceiling (default 240000, 4 min) |
 | `DOCTEST_PAGE_TIMEOUT_MS` | per-page ceiling in a batch (default 45 min) |
+| `DOCTEST_PAGE_GRACE_MS` | how long a page past the ceiling gets to clean up before it is killed (default 3 min) |
 | `NO_OPEN=1` | don't open the report (set automatically in a batch) |
 | `DOCTEST_EDITOR_BEAT_MS` | pause between the phases of a Monaco write (default 400) |
 | `DOCTEST_BUSY_WAIT_MS` | how long to wait for a busy page (an import) before calling a control missing (default 300000) |
@@ -276,10 +278,16 @@ Screenshots appear inline under their step in the report. Each run is also archi
   IP allow lists, private endpoints and VPC peering entries, pending invitations to the addresses
   the plan uses, and client credentials the run created, so a page is graded against an empty
   project. Point the tool only at a project kept for testing.
-- **An interrupted run does not clean up.** Ctrl-C releases the project lock and exits; the fork or
-  EC2 box of that run stays. The next run lists services that look like leftovers and does not delete
-  them: remove them with `tiger service delete <id> --confirm`. `node scripts/slot.mjs down` destroys
-  a leftover EC2 box.
+- **An interrupted run cleans up.** Ctrl-C, a SIGTERM (the batch runner's ceiling) or a hangup
+  stops the run: a Console step in flight finishes, a command running on the EC2 box is left there,
+  later steps are reported as stopped, the fork or EC2 box is deleted, the project is swept, the
+  report is written, and the run exits 130. A second Ctrl-C quits at once and prints what it leaves
+  behind with the command that removes it (`tiger service delete <id> --confirm`,
+  `node scripts/slot.mjs down`); a SIGTERM after a Ctrl-C does not. The cleanup takes as long as a
+  fork delete or a terraform destroy, a minute or two, and a fork or EC2 apply in progress cannot be
+  cut short. A run killed harder (SIGKILL, or a GitHub Actions cancel, which gives about ten seconds)
+  leaves its fork or box; the next run lists services that look like leftovers and does not delete
+  them.
 - **One run per project at a time.** Every run clears project-level state first, so two runs in one
   project would wipe each other's work and report phantom docs failures. A run takes a lock (a row
   in `doctest.run_lock` on the AWS standing service) before it opens the browser and exits 3 naming
