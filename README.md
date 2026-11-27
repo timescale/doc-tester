@@ -271,9 +271,12 @@ Screenshots appear inline under their step in the report. Each run is also archi
   a fork because a fork would protect nothing: creating a new service, creating a project-level
   resource, and acting on a table row pinned to a value the run owns.
 - **Deletion is guarded.** The tool never deletes a standing service, and checks an id's shape before
-  deleting anything. It deletes the fork it made, services the plan created, and any other service
-  that appeared in the project while the run was in progress, so don't create services by hand in the
-  test project during a run. A fork given with `--use-fork` or kept with `--keep-fork` is not deleted.
+  deleting anything. It names what it creates (`doctest-<page>` for the fork, `doctest-<page>-created`
+  for a service the page's steps create, typed over the wizard's default name; a service it cannot
+  name is not created) and deletes only services carrying a name it issued: the fork, the services
+  the plan created, and any service under one of those names that appeared in the project during the
+  run. A service that appeared under any other name is listed in the report with the command that
+  removes it, never deleted. A fork given with `--use-fork` or kept with `--keep-fork` is not deleted.
 - **Every run resets the project.** Before and after a Console walk the tool removes the project's
   IP allow lists, private endpoints and VPC peering entries, pending invitations to the addresses
   the plan uses, and client credentials the run created, so a page is graded against an empty
