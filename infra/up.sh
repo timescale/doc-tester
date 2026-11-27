@@ -6,15 +6,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-ENV_FILE="../.env"
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-fi
-
-export AWS_PROFILE="${DOCTEST_AWS_PROFILE:-docs-tester}"
+# shellcheck disable=SC1091
+source ./env.sh # .env, then the AWS identity rule (EDU-1069)
 
 ./init.sh
 if [ -n "${DOCTEST_TF_AUTO_APPROVE:-}" ]; then

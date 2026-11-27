@@ -18,8 +18,9 @@ const ROOT = join(import.meta.dirname, "..");
 const slot = await import("../lib/slot.mjs");
 const ec2 = await import("../lib/ec2.mjs");
 const { TFSTATE_BUCKET } = await import("../lib/services.mjs");
+const { awsEnv } = await import("../lib/aws-env.mjs");
 
-const aws = (...a) => execFileSync("aws", ["s3api", ...a, "--bucket", TFSTATE_BUCKET, "--key", KEY, "--region", "us-east-1"], { env: { ...process.env, AWS_PROFILE: process.env.DOCTEST_AWS_PROFILE || "docs-tester" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const aws = (...a) => execFileSync("aws", ["s3api", ...a, "--bucket", TFSTATE_BUCKET, "--key", KEY, "--region", "us-east-1"], { env: awsEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 // A second process: it has its own pid and its own in-memory lease, which is the whole point.
 const child = (code) => {
   const p = spawn("node", ["--input-type=module", "-e", `import * as slot from "${ROOT}/lib/slot.mjs"; ${code}`], { env: process.env });

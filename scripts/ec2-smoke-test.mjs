@@ -12,31 +12,20 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { awsProfile, awsEnv } from "../lib/aws-env.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_FILE = join(ROOT, ".env");
 if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
 
-const PROFILE = process.env.DOCTEST_AWS_PROFILE || "docs-tester";
+const PROFILE = awsProfile(); // "" means the machine's own credentials (lib/aws-env.mjs)
 const PORT = process.env.DOCTEST_EC2_LOCAL_PORT || "55432";
 
-console.error(`Fetching the generated password from SSM Parameter Store (profile ${PROFILE})…`);
+console.error(`Fetching the generated password from SSM Parameter Store (${PROFILE ? `profile ${PROFILE}` : "the machine's own credentials"})…`);
 const password = execFileSync(
   "aws",
-  [
-    "ssm",
-    "get-parameter",
-    "--name",
-    "/doc-testing-tool/ec2/db-password",
-    "--with-decryption",
-    "--profile",
-    PROFILE,
-    "--query",
-    "Parameter.Value",
-    "--output",
-    "text",
-  ],
-  { encoding: "utf8" },
+  ["ssm", "get-parameter", "--name", "/doc-testing-tool/ec2/db-password", "--with-decryption", "--query", "Parameter.Value", "--output", "text"],
+  { encoding: "utf8", env: awsEnv() },
 ).trim();
 
 const sql = `\\set ON_ERROR_STOP 1

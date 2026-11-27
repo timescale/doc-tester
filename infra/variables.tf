@@ -1,9 +1,3 @@
-variable "aws_profile" {
-  description = "Local AWS CLI profile to run as (see docs/adr/0003). Defaults to docs-tester so an ambient AWS_PROFILE can't silently redirect this."
-  type        = string
-  default     = "docs-tester"
-}
-
 variable "bare" {
   description = "Skip the cloud-init TimescaleDB install, so the box is only the OS: the bare target an install-guide run follows the docs' own steps on (CONTEXT.md). Set by lib/ec2.mjs's apply({ bare }) as TF_VAR_bare."
   type        = bool

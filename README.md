@@ -237,7 +237,7 @@ Optional:
 | `DOCTEST_FIXTURE_MAX_MB` | size cap on a file a `download` step fetches (default 200) |
 | `DOCTEST_LOCK_STALE_MS` | how long a run may go without a heartbeat before its project lock is taken over (default 300000) |
 | `DOCTEST_LOCK_HEARTBEAT_MS` | how often a run refreshes its project lock (default 60000) |
-| `DOCTEST_AWS_PROFILE` | AWS CLI profile the tool's own `aws` calls use (default `docs-tester`) |
+| `DOCTEST_AWS_PROFILE` | AWS CLI profile for every `aws` and terraform call (default `docs-tester`; empty = the machine's own credentials) |
 | `DOCTEST_EC2_LOCAL_PORT` | local end of the SSM tunnel to the EC2 box (default 55432) |
 | `DOCTEST_SLOT_WAIT_MIN` | how long a self-hosted run waits for another run to release the EC2 slot before refusing (default 15; `0` refuses at once) |
 | `DOCTEST_SLOT_TTL_MIN` | how long a run may hold the EC2 slot before its lease can be taken over (default 60) |
@@ -386,10 +386,16 @@ how a plan asserts a documented failure with `expect error`.
   [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), and the
   [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
   (for the SSM tunnel — there is no public inbound port to connect to instead), plus `psql`.
-- An AWS CLI profile named `docs-tester` in `~/.aws/config`/`~/.aws/credentials`, for an IAM user
-  with the permissions docs/adr/0003 describes. The profile has to have that name: the Terraform
-  backend and provider in `infra/` name it. `DOCTEST_AWS_PROFILE` changes only the profile the tool's
-  own `aws` calls use, so leave it at its default.
+- An AWS CLI profile in `~/.aws/config`/`~/.aws/credentials` for an IAM user with the permissions
+  docs/adr/0003 describes, named `docs-tester` or named in `DOCTEST_AWS_PROFILE`. That one setting
+  decides the identity everywhere: the tool's own `aws` calls, the `infra/` scripts, and Terraform's
+  backend and provider, which name no profile of their own. On a machine that authenticates with a
+  role instead (an EC2 instance profile, a CI OIDC role), set `DOCTEST_AWS_PROFILE=` to the empty
+  string and no profile is used. On a laptop that means the SDK's default chain, which includes a
+  `default` profile in `~/.aws`, so confirm the identity below before relying on it (with the profile
+  `DOCTEST_AWS_PROFILE` names in place of `docs-tester`, or no `--profile` when it is empty). Before
+  this rule an empty value meant `docs-tester`; a clone that had run before also needs one
+  `terraform init -reconfigure` in `infra/`, which `init.sh` does by itself the first time.
 - An S3 bucket for the Terraform state and the slot lease, named in `DOCTEST_TFSTATE_BUCKET`.
   Terraform does not create it.
 - Everything runs in `us-east-1`: the region is fixed in `infra/` and in the tool's `aws` calls.
@@ -422,7 +428,7 @@ stand it up, tear it down when you're done — nothing else will.
 box down safely, and `down --force` takes the slot from a holder you know is dead. `infra/up.sh` and
 `infra/down.sh` by hand ignore the lease, so check `status` first: a `test-page` run destroys a box that
 has no lease as a dead run's leftover.
-`node scripts/live-check-slot.mjs` (`npm run check:live`) checks the lease against the real bucket as `docs-tester`, using a throwaway key so the live lease is never touched (it creates no EC2 resources). It needs credentials, so it is not a `check-*.mjs`: those run anywhere, with no AWS, browser or secrets, and are what `npm run check` and CI run.
+`node scripts/live-check-slot.mjs` (`npm run check:live`) checks the lease against the real bucket with the identity `DOCTEST_AWS_PROFILE` decides, using a throwaway key so the live lease is never touched (it creates no EC2 resources). It needs credentials, so it is not a `check-*.mjs`: those run anywhere, with no AWS, browser or secrets, and are what `npm run check` and CI run.
 
 ## Layout
 
@@ -458,10 +464,11 @@ scripts/
   lint-plan.mjs      lint a page's plan, no browser or service
   plan-sql.mjs       print a plan's SQL as a psql script that rolls back
   slot.mjs           who holds the EC2 slot; tear down its box safely
-  live-check-slot.mjs  checks the slot lease against the real bucket (needs docs-tester credentials)
+  live-check-slot.mjs  checks the slot lease against the real bucket (needs the docs-tester IAM user's credentials)
   check-*.mjs        the offline checks `npm run check` runs (no AWS, no browser, no docs checkout)
   ec2-smoke-test.mjs standalone infra smoke test (extension + hypertable) — not the same path test-page.mjs walks
 infra/
+  env.sh              reads ../.env and sets AWS_PROFILE from DOCTEST_AWS_PROFILE; sourced by the four scripts below
   *.tf               the self-hosted TimescaleDB EC2 target (Terraform)
   init.sh             terraform init against the state bucket; up.sh, down.sh and the pre-flight call it
   up.sh / down.sh     provision / tear down
