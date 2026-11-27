@@ -76,8 +76,9 @@ report: its own verdict, `nothing to test` for a block with no steps, `not run` 
 `--os` left it out, or `not covered` when the page is tagged with a product no block targets.
 
 `test-page` exits 0 on any verdict except FAIL, 1 on FAIL, 2 when it refuses its input (a bad flag, a
-plan error, a plan that has drifted from its install guide), and 3 when another run holds the project
-or the EC2 slot.
+plan error, a plan that has drifted from its install guide), 3 when another run holds the project or
+the EC2 slot, and 4 when the project lock's host cannot be reached (`--unlocked` overrides that). A
+batch stops at the first exit 4: the cause is batch-wide.
 
 ## Setup
 
@@ -132,6 +133,7 @@ tool opens the report and its folder of screenshots when the run ends, unless `N
 | `--use-fork <id>` | run against a service you already have. Trusted as given and **never deleted** — a kept fork, or a standing service you want to drive directly. The run is reported as a slice |
 | `--from <N\|text>` | start at a step |
 | `--until <N\|text>` | stop after a step |
+| `--unlocked` | run without the project lock when its host (the AWS standing service) cannot be reached; only when you are certain no other run is using the project |
 
 `--from`/`--until` take **a number or matching text** (`--from "replace the statement"`), because step
 numbers shift the moment someone inserts a step. Step numbering in the report always matches the file,
@@ -153,6 +155,7 @@ project's services list and reports every service-scoped control as missing.
 | `--resume` | continue the most recent batch, skipping pages that reached a verdict (`pass`, `fail`, `blocked`, `stopped`, `skipped`); a page that timed out, crashed, was refused or saved no result runs again, and the run lists them. Refused with exit 2 if `--products` or `--os` differ from the batch's |
 | `--products <list>` | only these products of each plan |
 | `--os <list>` | only these distros of each bare plan; a page with no such block is listed, never spawned |
+| `--unlocked` | passed to every page: run without the project lock when its host cannot be reached |
 | `--dry-run` | print the scope and a rough wall clock (25 min per run, one run per distro block), run nothing |
 
 One of `--pages`, `--section` or `--all` is required. One child process per page, sequential. Each
@@ -295,7 +298,9 @@ Screenshots appear inline under their step in the report. Each run is also archi
   project would wipe each other's work and report phantom docs failures. A run takes a lock (a row
   in `doctest.run_lock` on the AWS standing service) before it opens the browser and exits 3 naming
   the holder if someone else has it. A crashed run's lock expires after `DOCTEST_LOCK_STALE_MS`. If
-  the lock host cannot be reached, the run warns and continues unlocked.
+  the lock host cannot be reached (the service paused, a stale id in `.env`), the run is refused with
+  exit 4: a run that cannot see the lock cannot see the run it would collide with. `--unlocked`
+  overrides that, for when you are certain you are the only runner.
 - **SQL is gated.** Statements that would mutate a real table are blocked off-fork — including `\COPY`,
   which once slipped the gate and would have ingested 10.7M rows into the standing service.
 - **Shell commands are limited.** On Tiger Cloud a `run command:` step runs on the machine running
