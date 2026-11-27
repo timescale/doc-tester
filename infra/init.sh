@@ -5,14 +5,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-ENV_FILE="../.env"
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-fi
+# shellcheck disable=SC1091
+source ./env.sh # .env, then the AWS identity rule (EDU-1069)
 
-export AWS_PROFILE="${DOCTEST_AWS_PROFILE:-docs-tester}"
-
-terraform init -input=false -backend-config="bucket=${DOCTEST_TFSTATE_BUCKET:?set DOCTEST_TFSTATE_BUCKET in .env (see .env.example)}"
+# One-off rollover: Terraform refuses to init when the backend block differs from the one cached in
+# .terraform/, and the block lost its profile line (EDU-1069), so a clone that had run before stops
+# here with "Backend configuration changed". Only then is -reconfigure passed: bucket and key are the
+# same, so nothing is migrated. Left on permanently it would also wave through a changed bucket, which
+# is the one wrong state location init exists to catch.
+RECONFIGURE=""
+if grep -Eq '"profile": *"' .terraform/terraform.tfstate 2>/dev/null; then RECONFIGURE="-reconfigure"; fi # a named profile; the cache lists every key, null included
+terraform init -input=false $RECONFIGURE -backend-config="bucket=${DOCTEST_TFSTATE_BUCKET:?set DOCTEST_TFSTATE_BUCKET in .env (see .env.example)}"

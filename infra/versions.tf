@@ -24,7 +24,8 @@ terraform {
   backend "s3" {
     key          = "doc-testing-tool/ec2/terraform.tfstate"
     region       = "us-east-1"
-    profile      = "docs-tester"
+    # No profile here: the backend reads AWS_PROFILE from the environment infra/env.sh sets,
+    # so DOCTEST_AWS_PROFILE decides the identity everywhere, and a box with an instance role needs none.
     encrypt      = true
     use_lockfile = true
   }

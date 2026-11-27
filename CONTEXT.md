@@ -5,7 +5,7 @@ Walks documented procedures against a real (or forked/provisioned) target — Ti
 ## Language
 
 **docs-tester**:
-The AWS IAM user (and matching local AWS CLI profile) this tool uses to provision and tear down its own AWS infrastructure. Distinct from any admin AWS identity used to bootstrap resources docs-tester itself can't create.
+The AWS IAM user this tool uses to provision and tear down its own AWS infrastructure, reached through the AWS CLI profile `DOCTEST_AWS_PROFILE` names (`docs-tester` by default; none on a machine that authenticates with a role). Distinct from any admin AWS identity used to bootstrap resources docs-tester itself can't create.
 _Avoid_: admin profile, the AWS account.
 
 **The AWS account**:
