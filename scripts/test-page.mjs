@@ -27,7 +27,7 @@ import { describeGuideDrift, describeUntagged } from "../lib/guide-report.mjs";
 import { prepareFixtures, cleanupFixtures } from "../lib/fixtures.mjs";
 import { createSession, walkProcedure, clearShots, listReadReplicasOf, SHOTS, SERVICE_ID, setCloud, PROJECT_ID, SHOTS_DISABLED, testInputEnvVar } from "../lib/walk.mjs";
 import { resetProjectSecurity, sweepPendingInvites, listCredentials, sweepCredentials } from "../lib/reset-project.mjs";
-import { forkService, deleteService, listServices, waitUntilReady, ensureReachable, STANDING_SERVICE_IDS } from "../lib/fork.mjs";
+import { forkService, deleteService, listServices, waitUntilReady, ensureReachable, STANDING_SERVICE_IDS, runNamePrefix, createdServiceName, partitionArrivals } from "../lib/fork.mjs";
 import { buildReport, overallVerdict } from "../lib/report.mjs";
 import { acquireRunLock } from "../lib/lock.mjs";
 import { requireCloud, requireAws } from "../lib/services.mjs";
@@ -340,12 +340,11 @@ async function main() {
   // A fork isolates a SERVICE. Project-level procedures (Members, Billing, ...) mutate the project,
   // which no service fork can isolate — forking for them would burn several minutes and, worse,
   // stamp "ran on a throwaway fork" on a report whose changes actually landed on the real project.
-  // Every service that existed BEFORE this page ran. Anything new at the end is ours, whether or
-  // not the walk managed to capture its id — createdServiceId is read out of the page URL, so a
-  // service that provisions slowly (the walk never lands on its URL) was silently never tracked and
-  // never deleted. That leaked a real, billing service today: 2 created, 1 deleted, no error shown.
-  // A list diff cannot miss it, because it never depends on the UI. Meaningless for a self-hosted
-  // run — no Tiger Cloud service is ever created there — so skip the CLI round-trip entirely.
+  // Every service that existed BEFORE this page ran: the baseline for the end-of-run sweep, which
+  // looks at what appeared since and deletes the arrivals carrying a name this run issued
+  // (lib/fork.mjs partitionArrivals). A service that provisions slowly, so the walk never captured
+  // it, is still caught that way; it once leaked a real, billing service. Meaningless for a
+  // self-hosted run — no Tiger Cloud service is ever created there — so skip the CLI round-trip.
   const servicesBefore =
     !selected.includes("cloud") ? new Set() : new Set((await listServices().catch(() => [])).map((s) => s.service_id || s.id).filter(Boolean));
 
@@ -376,6 +375,12 @@ async function main() {
   let teardownInfo = null;
   const createdServiceIds = []; // "Create service" makes a standalone resource, unrelated to any fork — track it separately for cleanup
   const createdServiceInfo = [];
+  const createdServiceNames = {}; // id -> the name the walk typed for it
+  // Every name this run gives a service (lib/fork.mjs): the fork's, and one per service the page's
+  // steps create, counted across the page's procedures. The sweep deletes by these exact names.
+  const issuedNames = new Set();
+  let creations = 0;
+  const nameCreated = () => { const n = createdServiceName(prefix, ++creations); issuedNames.add(n); return n; };
   let slotBusy = null; // set when another run holds the EC2 slot (lib/slot.mjs): then no self-hosted block can run, and the exit code says so
   let ec2Live = false; // an EC2 box was applied and not yet destroyed
 
@@ -624,7 +629,8 @@ async function main() {
     } else if (pageNeedsFork) {
       console.log(`\nThis page has destructive procedures → forking one throwaway copy for the whole page (via the Tiger CLI)...`);
       try {
-        fork = await forkService(STANDING_SERVICE_IDS[page.cloud], { name: `doctest-${prefix}` });
+        issuedNames.add(runNamePrefix(prefix));
+        fork = await forkService(STANDING_SERVICE_IDS[page.cloud], { name: runNamePrefix(prefix) });
         console.log(`  fork ready: ${fork.forkId}`);
       } catch (e) {
         const detail = (e.stderr || "").trim() || (e.message || "").split("\n")[0];
@@ -683,12 +689,13 @@ async function main() {
       console.log(`\n— Walking "${proc.title}" (${i + 1}/${testable.length}) on ${where}...`);
       // Screenshots carry the target in their name, so a Cloud failure and a self-hosted failure on
       // the same page never share a file prefix.
-      const r = await walkProcedure(tab, proc, `${prefix}-${target}-p${i}`, { inputs, serviceId, allowDestructive, pendingCreate, serviceOwned: ownTarget, fixturesDir: fixtures.dir, failFast, docImages });
+      const r = await walkProcedure(tab, proc, `${prefix}-${target}-p${i}`, { inputs, serviceId, allowDestructive, pendingCreate, serviceOwned: ownTarget, fixturesDir: fixtures.dir, failFast, docImages, nameCreated });
       r.target = target;
       pendingCreate = r.pendingCreate;
       if (fork) r.ranOnFork = fork.forkId;
       if (r.createdServiceId) {
         createdServiceIds.push(r.createdServiceId);
+        createdServiceNames[r.createdServiceId] = r.createdServiceName || null;
         // Adopt the service this procedure just created as the target for everything after it. The
         // docs' own narrative depends on it: "create a service" then "run this query" means run it on
         // THAT service. It must be READY first, or the SQL fails on a provisioning database and the
@@ -729,20 +736,28 @@ async function main() {
       const gone = await deleteService(id, { discoverChildren: () => listReadReplicasOf(tab, id) })
         .catch((e) => { console.log("  delete error:", (e.message || "").split("\n")[0]); return false; });
       console.log(gone ? "  deleted." : `  ⚠️  service ${id} NOT deleted — remove it with: tiger service delete ${id} --confirm`);
-      createdServiceInfo.push({ id, deleted: gone });
+      createdServiceInfo.push({ id, name: createdServiceNames[id] || null, deleted: gone });
     }
-    // Safety net: anything that appeared during this page and is still here. Catches services the
-    // walk created but never captured (see servicesBefore). deleteService refuses PROTECTED ids, so
-    // the standing services can't be caught by this even if the diff were wrong.
-    const strays = (await listServices().catch(() => []))
-      .map((s) => s.service_id || s.id)
-      .filter((id) => id && !servicesBefore.has(id) && id !== fork?.forkId && !createdServiceIds.includes(id));
-    for (const id of strays) {
-      console.log(`\n⚠️  service ${id} appeared during this run but was never tracked — deleting it (via the Tiger CLI)...`);
+    // Safety net: anything that appeared during this page, still here, and carrying one of the names
+    // this run issued (lib/fork.mjs). Catches a service the walk named but never captured, one that
+    // only materialised in the list after the walk moved on. A service that appeared under any OTHER
+    // name is somebody else's as far as this run can tell: a person creating one by hand in the same
+    // project at the same moment looks identical in a list diff, and this used to delete it
+    // (EDU-1068). It is listed with the command that removes it, and the report says so.
+    // deleteService refuses the standing services, so they can't be caught by this either way.
+    const { mine: strays, others } = partitionArrivals(servicesBefore, await listServices().catch(() => []), issuedNames, { exclude: [fork?.forkId, ...createdServiceIds] });
+    for (const s of strays) {
+      const id = s.service_id || s.id;
+      console.log(`\n⚠️  service ${id} (${s.name}) is this run's and was never tracked — deleting it (via the Tiger CLI)...`);
       const gone = await deleteService(id, { discoverChildren: () => listReadReplicasOf(tab, id) })
         .catch((e) => { console.log("  delete error:", (e.message || "").split("\n")[0]); return false; });
       console.log(gone ? "  deleted." : `  ⚠️  service ${id} NOT deleted — remove it with: tiger service delete ${id} --confirm`);
-      createdServiceInfo.push({ id, deleted: gone, untracked: true });
+      createdServiceInfo.push({ id, name: s.name, deleted: gone, untracked: true });
+    }
+    for (const s of others) {
+      const id = s.service_id || s.id;
+      console.log(`\n⚠️  service ${id} (${s.name || "unnamed"}) appeared in the project during this run without this run's name — NOT deleted. If it is a leftover: tiger service delete ${id} --confirm`);
+      createdServiceInfo.push({ id, name: s.name, deleted: false, untracked: true, left: true });
     }
     // Project-level resources a fork cannot isolate (IP allow lists, VPCs, private endpoints). The
     // docs describe the EMPTY state of every create-flow, so rows left behind by one run change the
