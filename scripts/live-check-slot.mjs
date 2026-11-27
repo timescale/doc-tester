@@ -17,7 +17,7 @@ process.env.DOCTEST_SLOT_WAIT_MIN = "0"; // a busy slot fails at once unless a c
 const ROOT = join(import.meta.dirname, "..");
 const slot = await import("../lib/slot.mjs");
 const ec2 = await import("../lib/ec2.mjs");
-const { TFSTATE_BUCKET } = await import("../lib/services.mjs");
+const { tfstateBucket: TFSTATE_BUCKET } = (await import("../lib/services.mjs")).requireAws(); // a live check of the lease needs the bucket
 const { awsEnv } = await import("../lib/aws-env.mjs");
 
 const aws = (...a) => execFileSync("aws", ["s3api", ...a, "--bucket", TFSTATE_BUCKET, "--key", KEY, "--region", "us-east-1"], { env: awsEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });

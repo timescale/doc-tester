@@ -195,25 +195,24 @@ inside `dev-fixtures/` is fixture mode, and a copy of a fixture kept anywhere el
 npm run check
 ```
 
-Runs the 16 `scripts/check-*.mjs` scripts. They need no AWS, no browser and no secrets, only the four
-variables `DOCTEST_PROJECT_ID`, `DOCTEST_SERVICE_AWS`, `DOCTEST_SERVICE_AZURE` and
-`DOCTEST_TFSTATE_BUCKET` set to any value. `.github/workflows/checks.yml` runs them on every pull
+Runs the `scripts/check-*.mjs` scripts. They need no AWS, no browser, no secrets and no
+configuration. `.github/workflows/checks.yml` runs them on every pull
 request and on pushes to `main`, on Node 22 and 24, and scans a pull request's commits for committed
 credentials.
 
 ## Configuration
 
 Set these in `.env` at the repository root, or in the environment. Nothing in git names a service: a
-missing value throws on import rather than defaulting to an id that used to be right.
-
-Required by `test-page`, `test-batch`, `build-report`, `scripts/slot.mjs` and `npm run check`. `lint-plan`,
-`plan-sql` and `npm run login` do not read them:
+missing value stops the run that needs it, by name, rather than defaulting to an id that used to be
+right. A Tiger Cloud run needs the project and the standing services; a self-hosted run,
+`scripts/slot.mjs` and `npm run check:live` need the state bucket; `npm run check`, `lint-plan`,
+`plan-sql`, `build-report` and `npm run login` need none of them.
 
 | Variable | Purpose |
 | --- | --- |
 | `DOCTEST_PROJECT_ID` | project holding the standing services |
 | `DOCTEST_SERVICE_AWS` / `_AZURE` | the standing service per cloud |
-| `DOCTEST_TFSTATE_BUCKET` | S3 bucket that holds the Terraform state and the EC2 slot lease. A Tiger Cloud-only setup still has to set it, to any value |
+| `DOCTEST_TFSTATE_BUCKET` | S3 bucket that holds the Terraform state and the EC2 slot lease |
 
 Required for a Tiger Cloud run:
 

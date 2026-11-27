@@ -30,6 +30,7 @@ import { resetProjectSecurity, sweepPendingInvites, listCredentials, sweepCreden
 import { forkService, deleteService, listServices, waitUntilReady, ensureReachable, STANDING_SERVICE_IDS } from "../lib/fork.mjs";
 import { buildReport, overallVerdict } from "../lib/report.mjs";
 import { acquireRunLock } from "../lib/lock.mjs";
+import { requireCloud, requireAws } from "../lib/services.mjs";
 import * as ec2 from "../lib/ec2.mjs";
 import { walkEc2Procedure } from "../lib/walk-ec2.mjs";
 import { resolveSlice, applySlice, SliceError } from "../lib/slice.mjs";
@@ -112,8 +113,7 @@ async function main() {
     products: page.frontmatter.products || [],
     cloud: page.cloud,
   };
-  setCloud(page.cloud); // picks the right standing service (lib/walk.mjs) for gotoService/walkProcedure defaults
-  console.log(`\nPage: ${meta.title || meta.url}\n  ${page.file}\n  Cloud: ${page.cloud} (standing service ${STANDING_SERVICE_IDS[page.cloud]})`);
+  console.log(`\nPage: ${meta.title || meta.url}\n  ${page.file}\n  Cloud: ${page.cloud}`);
 
   // 2. The plan is the gate. A page without a <TestPlan> runs nothing: deciding for ourselves which
   // prose is testable is the judgement that produced specific, confident, wrong findings —
@@ -159,6 +159,15 @@ async function main() {
     }
   }
   const { selected, allUnits, units } = runUnits(parsed, wanted, osWanted);
+  // The settings a run needs are the ones its targets need (lib/services.mjs): a self-hosted-only run
+  // never names a Tiger Cloud service, and a Cloud-only run never names the state bucket. A missing
+  // value stops the run here, by name, before anything is provisioned.
+  if (selected.includes("cloud")) {
+    requireCloud();
+    setCloud(page.cloud); // picks the right standing service (lib/walk.mjs) for gotoService/walkProcedure defaults
+    console.log(`  standing service: ${STANDING_SERVICE_IDS[page.cloud]}`);
+  }
+  if (selected.includes("self-hosted")) requireAws();
   const notRun = parsed.targets.filter((t) => !selected.includes(t));
   const osNotRun = allUnits.filter((u) => !units.includes(u));
   const labelOf = (name) => TARGETS.find((t) => t.name === name)?.label ?? name;
@@ -344,7 +353,10 @@ async function main() {
   // docs failure that never happened. Taken BEFORE the browser opens, so a run that has to yield
   // costs nothing, and released in the finally block with the rest of the teardown. Ctrl-C releases
   // it too; a run killed harder leaves a row whose heartbeat goes stale and is taken over.
-  const lock = await acquireRunLock({ page: page.slug || url });
+  // A self-hosted-only run touches no Cloud project state and has no lock host to use; its one
+  // shared resource, the EC2 slot, is leased by lib/slot.mjs.
+  const lock = selected.includes("cloud") ? await acquireRunLock({ page: page.slug || url }) : { acquired: true, skipped: true };
+  if (lock.skipped) console.log(`  no project lock: this run does not touch the Tiger Cloud project (the EC2 slot lease serialises self-hosted runs)`);
   if (!lock.acquired) {
     console.error(
       `\n  Another run holds this project: ${lock.holder} is testing "${lock.page}" since ${lock.since}.\n` +
