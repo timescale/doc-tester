@@ -138,6 +138,7 @@ if (!entries?.length) {
     ... --dry-run                                   list what would run, and for how long
     ... --products cloud,self-hosted                only these products of each plan
     ... --os ubuntu,debian                          only these distros of each bare plan
+    ... --unlocked                                  run without the project lock when its host is unreachable
 `);
   process.exit(2);
 }
@@ -229,6 +230,7 @@ if (again.length) {
 // would otherwise deliver that second one by itself. A second Ctrl-C here is forwarded too, and means
 // the same thing. On Windows a forwarded signal is a plain terminate, so there is no grace there.
 let stopping = null; // the signal, once one arrived
+let lockHostDown = false; // a page was refused because the project lock's host is unreachable: every page would be
 let stoppingAt = null;
 let current = null; // the child in flight
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
@@ -246,7 +248,7 @@ function runPage(p) {
     const log = join(dir, `${p.url.split("/").filter(Boolean).pop()}.log`);
     const out = [];
     const started = Date.now();
-    const child = spawn(process.execPath, [PAGE_SCRIPT, p.url, ...(products ? ["--products", products.join(",")] : []), ...(osList ? ["--os", osList.join(",")] : [])], {
+    const child = spawn(process.execPath, [PAGE_SCRIPT, p.url, ...(products ? ["--products", products.join(",")] : []), ...(osList ? ["--os", osList.join(",")] : []), ...(argv.includes("--unlocked") ? ["--unlocked"] : [])], {
       cwd: ROOT,
       env: { ...process.env, NO_OPEN: "1" }, // a batch must not open 200 browser windows
       detached: true, // its own session (setsid): signals reach it through the forward above, not from the terminal
@@ -280,14 +282,16 @@ function runPage(p) {
       writeFileSync(log, out.join(""));
       // Grade from the run's own saved result, using the report's rule rather than a copy of it.
       // Exit 2 is test-page refusing its input before it ran anything (a plan error, drift from the
-      // guide, a bad flag): not a crash, and not a result either.
+      // guide, a bad flag), 3 is another run holding the project, and 4 is the project lock's host
+      // being unreachable (lib/lock.mjs): not a crash, and not a result either.
       //
       // A page cut short by the ceiling or by a signal keeps that verdict even when it saved a result:
       // what it saved says `stopped` for the steps it never reached, and a resume must run the page
       // again, not take a partial walk as the answer.
       // A signal that landed after the child had already exited did not interrupt it.
       const cut = timedOut ? "timeout" : stopping && !(exitedAt && stoppingAt > exitedAt) ? "interrupted" : null;
-      let verdict = cut || (signal ? "crashed" : code === 0 ? "unknown" : code === 2 ? "refused" : "crashed");
+      let verdict = cut || (signal ? "crashed" : code === 0 ? "unknown" : code === 2 || code === 3 || code === 4 ? "refused" : "crashed");
+      if (code === 4) lockHostDown = true;
       let archive = null;
       let targets = null; // per-product verdicts, as the run saved them
       // Only a result this child wrote: one that is older is the previous run's, and a child that never
@@ -305,6 +309,7 @@ const results = [];
 for (const p of runnable) {
   if (isSettled(state.done[p.url]?.verdict)) { results.push(state.done[p.url]); continue; }
   if (stopping) break; // the pages after the interrupted one are untouched, and --resume starts there
+  if (lockHostDown) break; // the cause is batch-wide (a paused standing service); refusing 60 pages in turn says nothing more
   console.log(`\n${"=".repeat(70)}\n  ${p.title}\n  ${p.url}\n${"=".repeat(70)}`);
   const r = await runPage(p);
   state.done[p.url] = r;
@@ -348,6 +353,11 @@ if (noPlan.length) {
   for (const p of noPlan) console.log(`    ${p.url.replace(BASE, "")}${p.error ? `  (${p.error})` : ""}`);
 }
 console.log(`\n  summary: ${join(dir, "summary.md")}\n`);
+if (lockHostDown) {
+  const left = runnable.length - results.length;
+  console.log(`  stopped: the project lock's host cannot be reached, so every page would be refused; ${left} not started. Resume the AWS standing service, or pass --unlocked if no other run uses the project, then:\n    node scripts/test-batch.mjs ${argv.join(" ")}${argv.includes("--resume") ? "" : " --resume"}\n`);
+  process.exit(1);
+}
 if (stopping) {
   const left = runnable.length - results.length;
   console.log(`  interrupted (${stopping}) after ${results.length} of ${runnable.length} page(s); ${left} not started. Continue with:\n    node scripts/test-batch.mjs ${argv.join(" ")}${argv.includes("--resume") ? "" : " --resume"}\n`);

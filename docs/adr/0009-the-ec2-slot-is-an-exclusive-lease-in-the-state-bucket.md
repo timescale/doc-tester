@@ -6,7 +6,7 @@ status: accepted
 
 ADR 0005 gives every self-hosted run its own ad hoc box, but all runs share one **slot**: one Terraform state key, one `aws_instance.ec2`. Nothing stopped a second run from starting while the first was still walking. It found the box in state, `apply` did nothing or (once an AMI or `user_data` differs per distro) replaced it, and whichever run finished first destroyed the box under the other. The survivor failed with SSM errors that read like a docs bug. This happened on 2026-10-15, while two people were testing: one run's box was replaced mid-walk, and the cleanup then failed on Terraform's state lock.
 
-Terraform's own lock (`use_lockfile = true`) cannot help: it is held for one terraform command, and the overlap is between commands. The project lock (`lib/lock.mjs`) is about the Console, and fails open when its host is unreachable.
+Terraform's own lock (`use_lockfile = true`) cannot help: it is held for one terraform command, and the overlap is between commands. The project lock (`lib/lock.mjs`) is about the Console, and fails open when its host is unreachable (it fails closed since EDU-1015).
 
 The slot is now an **exclusive lease**: an object in the tfstate bucket (`doc-testing-tool/ec2/slot.lease.json`), created with a conditional write (`If-None-Match: *`), which S3 makes atomic, and which `docs-tester`'s boundary already allows (ADR 0003). `lib/slot.mjs` owns it. `ec2.apply()` takes the lease before anything else and `ec2.destroy()` releases it, so one run is the only thing touching the slot from provisioning to teardown.
 

@@ -114,6 +114,18 @@ check("resuming with different flags is refused before anything runs, and names 
   assert.match(r.out, /--products/);
   assert.deepEqual(r.ran, []);
 });
+check("a page refused because the lock host is unreachable (exit 4) stops the batch: the next page never starts, and --resume lists it", () => {
+  const r = batch([], { STUB_EXIT: "4" });
+  assert.equal(r.code, 1, r.out.slice(-400));
+  assert.deepEqual(r.ran, [URL("self-hosted/kubernetes-dev")]);
+  assert.match(r.out, /lock's host cannot be reached/);
+  assert.match(r.out, /--resume/);
+});
+check("a page refused because another run holds the project (exit 3) is `refused`, and the batch goes on", () => {
+  const r = batch([], { STUB_EXIT: "3" });
+  assert.deepEqual(r.ran.sort(), [URL("self-hosted/docker-dev"), URL("self-hosted/kubernetes-dev")].sort(), r.out.slice(-400));
+  assert.match(r.out, /refused/);
+});
 check("a page that ends with no verdict makes the batch exit 1, though the child exited 0", () => {
   const r = batch([], { STUB_EXIT: "0" });
   assert.equal(r.code, 1, r.out.slice(-400));

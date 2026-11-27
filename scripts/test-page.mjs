@@ -78,7 +78,7 @@ async function main() {
   // Reject an unknown flag instead of ignoring it. `--dry-run`, which this script does not have, was
   // typed by mistake and silently started a REAL run — a second one, concurrent with a run already in
   // flight, which would have forked a service and fought it over the project reset.
-  const KNOWN = new Set(["--fail-fast", "--keep-fork", "--use-fork", "--from", "--until", "--products", "--os"]);
+  const KNOWN = new Set(["--fail-fast", "--keep-fork", "--use-fork", "--from", "--until", "--products", "--os", "--unlocked"]);
   const takesValue = new Set(["--use-fork", "--from", "--until", "--products", "--os"]);
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -91,10 +91,11 @@ async function main() {
   }
 
   const keepFork = args.includes("--keep-fork");
+  const unlocked = args.includes("--unlocked"); // run without the project lock when its host is unreachable (lib/lock.mjs)
   const useFork = val("--use-fork");
   const url = args.find((a) => !a.startsWith("--") && a !== useFork && a !== val("--from") && a !== val("--until") && a !== val("--products") && a !== val("--os"));
   if (!url) {
-    console.error(`Usage: node scripts/test-page.mjs "<docs page URL>" [--fail-fast] [--products cloud,self-hosted] [--os ubuntu]
+    console.error(`Usage: node scripts/test-page.mjs "<docs page URL>" [--fail-fast] [--products cloud,self-hosted] [--os ubuntu] [--unlocked]
        slices:  [--keep-fork] [--use-fork <id>] [--from N] [--until N]`);
     process.exit(2);
   }
@@ -355,16 +356,23 @@ async function main() {
   // it on its way out too; a run killed harder leaves a row whose heartbeat goes stale and is taken over.
   // A self-hosted-only run touches no Cloud project state and has no lock host to use; its one
   // shared resource, the EC2 slot, is leased by lib/slot.mjs.
-  const lock = selected.includes("cloud") ? await acquireRunLock({ page: page.slug || url }) : { acquired: true, skipped: true };
+  const lock = selected.includes("cloud") ? await acquireRunLock({ page: page.slug || url, allowUnlocked: unlocked }) : { acquired: true, skipped: true };
   if (lock.skipped) console.log(`  no project lock: this run does not touch the Tiger Cloud project (the EC2 slot lease serialises self-hosted runs)`);
   if (!lock.acquired) {
+    // Refused, not run. An unreachable lock host is refused too (EDU-1015), because a run that cannot
+    // see the lock cannot see the other run it would collide with: exit 4, its own code, so a batch
+    // can stop at the first one instead of refusing every page in turn.
     console.error(
-      `\n  Another run holds this project: ${lock.holder} is testing "${lock.page}" since ${lock.since}.\n` +
-        `  Wait for it to finish, or if that run is dead its lock expires on its own.\n`
+      lock.open
+        ? `\n  Cannot take the project lock: ${lock.reason}.\n` +
+          `  The lock lives on the AWS standing service${lock.host ? ` (${lock.host})` : ""}; resume it, or check \`tiger service list\` and .env.\n` +
+          `  If you are certain no other run is using this project, pass --unlocked.\n`
+        : `\n  Another run holds this project: ${lock.holder} is testing "${lock.page}" since ${lock.since}.\n` +
+          `  Wait for it to finish, or if that run is dead its lock expires on its own.\n`
     );
-    process.exit(3);
+    process.exit(lock.open ? 4 : 3);
   }
-  if (lock.open) console.log(`  ⚠️  could not take the project lock (${lock.reason}) — running unlocked; a concurrent run would collide.`);
+  if (lock.open) console.log(`  ⚠️  running UNLOCKED (--unlocked): ${lock.reason}. A concurrent run in this project would collide with this one.`);
 
   // Declared here (shared scope), not inside either branch below: the Report section at the end
   // reads all of these regardless of which substrate ran.
