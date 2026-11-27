@@ -8,7 +8,7 @@
 // skipped, a saved "nothing testable"). A page that timed out, crashed, was refused or ended with no saved
 // result has no verdict, and `--resume` runs it again.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,7 +22,7 @@ const check = (name, fn) => {
 console.log("the decisions");
 check("a verdict the tool reached is settled; one it never got is not", () => {
   for (const v of ["pass", "fail", "blocked", "stopped", "skipped"]) assert.equal(isSettled(v), true, v);
-  for (const v of ["timeout", "crashed", "refused", "unknown", undefined, null, ""]) assert.equal(isSettled(v), false, String(v));
+  for (const v of ["timeout", "interrupted", "crashed", "refused", "unknown", undefined, null, ""]) assert.equal(isSettled(v), false, String(v));
 });
 
 const page = (slug) => ({ url: `https://x/docs/${slug}`, title: slug });
@@ -131,6 +131,63 @@ check("a new batch records the flags it was started with", () => {
   batch(["--products", "self-hosted"], { DOCTEST_BATCH_NOW: "2026-10-20T13:00:00.000Z" });
   const dir = dirs().find((d) => d.startsWith("batch-2026-10-20T13-00-00"));
   assert.deepEqual(JSON.parse(readFileSync(join(batches, dir, "state.json"), "utf8")).flags, { products: ["self-hosted"], os: null });
+});
+
+// A page that outlives the ceiling, or a batch that is interrupted, must give the child the chance to
+// clean up (lib/stop.mjs): SIGTERM first, SIGKILL only after the grace. This stub lingers, logs the
+// SIGTERM it gets, and exits after STUB_CLEANUP_MS, the way a page spends a minute deleting its fork.
+const slow = join(root, "stub-slow-page.mjs");
+writeFileSync(slow, `import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(calls)}, process.argv[2] + "\\n");
+process.on("SIGTERM", () => { appendFileSync(${JSON.stringify(calls)}, "SIGTERM\\n"); setTimeout(() => process.exit(130), Number(process.env.STUB_CLEANUP_MS ?? 100)); });
+setTimeout(() => process.exit(0), Number(process.env.STUB_SLEEP_MS ?? 10000));
+`);
+// The state of the batch stamped `now`, by name: "the latest directory" is whichever earlier check ran last.
+const verdictOf = (now, slug) => JSON.parse(readFileSync(join(batches, `batch-${now.replace(/[:.]/g, "-").slice(0, 19)}`, "state.json"), "utf8")).done[URL(slug)]?.verdict;
+
+console.log("the ceiling and a signal give the page time to clean up");
+check("a page past the ceiling gets SIGTERM, cleans up, is graded timeout, and the batch goes on to the next page", () => {
+  const now = "2026-11-27T10:00:00.000Z";
+  // A 1.5 s ceiling: the stub has to have installed its SIGTERM handler by then, on a slow runner too.
+  const r = batch([], { DOCTEST_PAGE_SCRIPT: slow, DOCTEST_PAGE_TIMEOUT_MS: "1500", DOCTEST_PAGE_GRACE_MS: "5000", STUB_CLEANUP_MS: "100", DOCTEST_BATCH_NOW: now });
+  assert.deepEqual(r.ran, [URL("self-hosted/kubernetes-dev"), "SIGTERM", URL("self-hosted/docker-dev"), "SIGTERM"], r.out.slice(-600));
+  assert.equal(verdictOf(now, "self-hosted/kubernetes-dev"), "timeout");
+  assert.equal(r.code, 1);
+});
+check("a page that ignores SIGTERM is killed after the grace, and is still graded timeout", () => {
+  const t0 = Date.now();
+  const now = "2026-11-27T10:01:00.000Z";
+  const r = batch([], { DOCTEST_PAGE_SCRIPT: slow, DOCTEST_PAGE_TIMEOUT_MS: "1500", DOCTEST_PAGE_GRACE_MS: "300", STUB_CLEANUP_MS: "60000", STUB_SLEEP_MS: "60000", DOCTEST_BATCH_NOW: now });
+  assert.ok(Date.now() - t0 < 20_000, "the batch did not wait for the stub's own exit");
+  assert.equal(verdictOf(now, "self-hosted/kubernetes-dev"), "timeout", r.out.slice(-600));
+  assert.equal(verdictOf(now, "self-hosted/docker-dev"), "timeout");
+});
+const interruptedNow = "9999-12-31T00:00:00.000Z";
+const checkAsync = async (name, fn) => {
+  try { await fn(); console.log(`  ok   ${name}`); } catch (e) { failed++; console.log(`  FAIL ${name}\n       ${String(e.message).split("\n").join("\n       ")}`); }
+};
+await checkAsync("SIGTERM to the batch reaches the page in flight once, the next page never starts, the page is `interrupted`, and the batch exits 130", async () => {
+  writeFileSync(calls, "");
+  // Stamped after every batch the checks above seeded, so the --resume below picks this one up.
+  const child = spawn(process.execPath, [join(ROOT, "scripts", "test-batch.mjs"), "--pages", pages], {
+    cwd: ROOT, env: { ...process.env, DOCS_REPO: join(ROOT, "dev-fixtures", "docs-repo"), DOCTEST_BATCH_ROOT: batches, DOCTEST_PAGE_SCRIPT: slow, STUB_CLEANUP_MS: "100", DOCTEST_BATCH_NOW: interruptedNow },
+  });
+  let out = "";
+  child.stdout.on("data", (b) => (out += b));
+  child.stderr.on("data", (b) => (out += b));
+  // wait until the first page is in flight, then interrupt the batch
+  for (let i = 0; i < 100 && !readFileSync(calls, "utf8").includes("kubernetes-dev"); i++) await new Promise((r) => setTimeout(r, 50));
+  child.kill("SIGTERM");
+  const code = await new Promise((r) => child.on("close", (c) => r(c)));
+  assert.equal(code, 130, out.slice(-600));
+  assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [URL("self-hosted/kubernetes-dev"), "SIGTERM"]);
+  assert.equal(verdictOf(interruptedNow, "self-hosted/kubernetes-dev"), "interrupted");
+  assert.match(out, /--resume/);
+});
+check("the interrupted page runs again on --resume (an interrupted walk is not a verdict)", () => {
+  const r = batch(["--resume"]);
+  assert.deepEqual(r.ran.sort(), [URL("self-hosted/docker-dev"), URL("self-hosted/kubernetes-dev")].sort(), r.out.slice(-600));
+  assert.match(r.out, /run again.*interrupted/s);
 });
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");

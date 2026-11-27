@@ -31,6 +31,7 @@ import { forkService, deleteService, listServices, waitUntilReady, ensureReachab
 import { buildReport, overallVerdict } from "../lib/report.mjs";
 import { acquireRunLock } from "../lib/lock.mjs";
 import { requireCloud, requireAws } from "../lib/services.mjs";
+import { installStopHandler, stopRequested, stopReason, stoppedLine } from "../lib/stop.mjs";
 import * as ec2 from "../lib/ec2.mjs";
 import { walkEc2Procedure } from "../lib/walk-ec2.mjs";
 import { resolveSlice, applySlice, SliceError } from "../lib/slice.mjs";
@@ -351,8 +352,8 @@ async function main() {
   // One run per project. The reset below wipes project-level state, so a second run in the same
   // project would delete what the first is in the middle of testing and the first would report a
   // docs failure that never happened. Taken BEFORE the browser opens, so a run that has to yield
-  // costs nothing, and released in the finally block with the rest of the teardown. Ctrl-C releases
-  // it too; a run killed harder leaves a row whose heartbeat goes stale and is taken over.
+  // costs nothing, and released after the teardown with the rest of it. An interrupted run releases
+  // it on its way out too; a run killed harder leaves a row whose heartbeat goes stale and is taken over.
   // A self-hosted-only run touches no Cloud project state and has no lock host to use; its one
   // shared resource, the EC2 slot, is leased by lib/slot.mjs.
   const lock = selected.includes("cloud") ? await acquireRunLock({ page: page.slug || url }) : { acquired: true, skipped: true };
@@ -365,12 +366,6 @@ async function main() {
     process.exit(3);
   }
   if (lock.open) console.log(`  ⚠️  could not take the project lock (${lock.reason}) — running unlocked; a concurrent run would collide.`);
-  for (const sig of ["SIGINT", "SIGTERM"]) {
-    process.once(sig, async () => {
-      await lock.release?.();
-      process.exit(130);
-    });
-  }
 
   // Declared here (shared scope), not inside either branch below: the Report section at the end
   // reads all of these regardless of which substrate ran.
@@ -382,12 +377,34 @@ async function main() {
   const createdServiceIds = []; // "Create service" makes a standalone resource, unrelated to any fork — track it separately for cleanup
   const createdServiceInfo = [];
   let slotBusy = null; // set when another run holds the EC2 slot (lib/slot.mjs): then no self-hosted block can run, and the exit code says so
+  let ec2Live = false; // an EC2 box was applied and not yet destroyed
+
+  // Ctrl-C or SIGTERM: stop after the step in flight and go through the normal teardown below, so
+  // the fork, the box and the project state are cleaned up and the report says what ran (lib/stop.mjs).
+  // The handler itself exits only on a second signal, naming what that leaves behind.
+  installStopHandler({
+    onFirst: (sig) => console.error(`\n  ${sig}: stopping after the current step, then cleaning up (fork, EC2 box, project state) and writing the report. Ctrl-C again quits at once without cleanup.`),
+    onSecond: () => lock.release?.(),
+    leftovers: () => [
+      ...(fork?.forkId && !useFork && !forkInfo?.deleted ? [`fork ${fork.forkId}: tiger service delete ${fork.forkId} --confirm`] : []),
+      ...createdServiceIds.map((id) => `service ${id}: tiger service delete ${id} --confirm`),
+      ...(ec2Live ? ["the EC2 box: node scripts/slot.mjs down"] : []),
+      "project-level residue (allow lists, invites, credentials): the next run's pre-run reset removes it",
+    ],
+  });
 
   // One walk per target, serial, in TARGETS order: Cloud first, then the EC2 box. A Cloud failure
   // does not skip the self-hosted walk — the two verdicts are independent, and one run should
   // return both findings (docs/adr/0006).
   for (const { target, block, os, path } of units) {
   const plan = planFor(parsed, target, block);
+  // A target the interrupt reached before it started is reported, not dropped: the report must say
+  // the product was not tested, and `stopped` keeps the page out of a pass.
+  if (stopRequested()) {
+    console.log(`\n  not run on ${labelOf(target)}: the run was interrupted (${stopReason()})`);
+    results.push({ title: `${meta.title || page.slug} (test plan) on ${labelOf(target)}${os ? ` (${[os, path].filter(Boolean).join(", ")})` : ""}`, verdict: "stopped", actions: [stoppedLine(0, "not run")], shots: [], stepTitles: [], target, os, path });
+    continue;
+  }
   // A block that declares a product and has no steps says "nothing on this page is testable there"
   // (a tab of prose with no procedure, say). That is a verdict of its own, NOT TESTABLE, and it must
   // not cost a fork or an EC2 box: provisioning a target to walk zero steps would spend ten minutes
@@ -415,6 +432,7 @@ async function main() {
       // The slot was busy for an earlier block of this page: another run still holds it, so waiting
       // the full timeout again for each remaining block would only repeat the answer.
       if (slotBusy) throw Object.assign(new Error(slotBusy), { code: "SLOT_BUSY" });
+      ec2Live = true;
       await ec2.apply({ bare, os: os || "ubuntu" });
       instanceId = await ec2.instanceId();
       await ec2.waitForSsmRegistration(instanceId);
@@ -426,9 +444,17 @@ async function main() {
       password = await ec2.dbPassword();
       console.log(`  target ready: ${instanceId}`);
     } catch (e) {
-      if (e.code === "SLOT_BUSY") { attemptedApply = false; slotBusy = e.message; } // nothing was provisioned, and the box in state is another run's
-      provisionError = (e.message || "").split("\n")[0];
-      console.log(`  ⚠️  provisioning failed: ${provisionError}`);
+      if (e.code === "SLOT_BUSY") { attemptedApply = false; ec2Live = false; slotBusy = e.message; } // nothing was provisioned, and the box in state is another run's
+      // An interrupt during provisioning is not a provisioning failure: the walker below reports every
+      // step `stopped`, and the box is destroyed in the finally as it is after a finished walk.
+      // Thrown before the lease was taken (a stop, a missing bucket, a profile that does not exist):
+      // no box exists, and the box in state is another run's, so there is nothing to destroy.
+      if (e.provisioned === false) { attemptedApply = false; ec2Live = false; }
+      if (e.code === "STOPPED") console.log(`  ${e.message}`);
+      else {
+        provisionError = (e.message || "").split("\n")[0];
+        console.log(`  ⚠️  provisioning failed: ${provisionError}`);
+      }
     }
 
     // Provisioning has now HAPPENED — the `fork the service` step, if the plan has one, is rewritten
@@ -447,31 +473,36 @@ async function main() {
       });
     }
 
-    for (let i = 0; i < testable.length; i++) {
-      const proc = testable[i];
-      console.log(`\n— Walking "${proc.title}" (${i + 1}/${testable.length}) on the EC2 target...`);
-      const ensureTunnel = async () => (tunnel ??= await ec2.openTunnel(instanceId)).localPort;
-      const r = await walkEc2Procedure(proc, { localPort: tunnel?.localPort, ensureTunnel, runAs: bare ? ec2.bareUser(os) : undefined, password, instanceId, inputs });
-      r.target = target;
-      r.os = os;
-      r.path = path;
-      results.push(r);
-    }
-
-    if (tunnel) ec2.closeTunnel(tunnel);
-    const destroyed = attemptedApply
-      ? await ec2.destroy().then(() => true).catch((e) => {
-          console.log("  ec2 destroy error:", (e.message || "").split("\n")[0]);
-          return false;
-        })
-      : true;
-    console.log(!attemptedApply ? "\n  Nothing was provisioned, so there is nothing to destroy." : destroyed ? "\n  EC2 target destroyed." : `\n  ⚠️  EC2 target NOT destroyed — run \`node scripts/slot.mjs down\` by hand.`);
-    if (results.length) {
-      results[results.length - 1].cleanup = !attemptedApply
-        ? { status: "ok", did: "nothing was provisioned (the EC2 slot is busy)" }
-        : destroyed
-          ? { status: "ok", did: "destroyed the EC2 target" }
-          : { status: "blocked", did: "EC2 target NOT destroyed — run `node scripts/slot.mjs down` by hand" };
+    // The walk is inside a try so the box is destroyed however the walk ends. A thrown error used to
+    // skip the destroy below and leave the box running, the same leak an interrupt caused.
+    try {
+      for (let i = 0; i < testable.length; i++) {
+        const proc = testable[i];
+        console.log(`\n— Walking "${proc.title}" (${i + 1}/${testable.length}) on the EC2 target...`);
+        const ensureTunnel = async () => (tunnel ??= await ec2.openTunnel(instanceId)).localPort;
+        const r = await walkEc2Procedure(proc, { localPort: tunnel?.localPort, ensureTunnel, runAs: bare ? ec2.bareUser(os) : undefined, password, instanceId, inputs });
+        r.target = target;
+        r.os = os;
+        r.path = path;
+        results.push(r);
+      }
+    } finally {
+      if (tunnel) ec2.closeTunnel(tunnel);
+      const destroyed = attemptedApply
+        ? await ec2.destroy().then(() => true).catch((e) => {
+            console.log("  ec2 destroy error:", (e.message || "").split("\n")[0]);
+            return false;
+          })
+        : true;
+      ec2Live = !destroyed;
+      console.log(!attemptedApply ? "\n  Nothing was provisioned, so there is nothing to destroy." : destroyed ? "\n  EC2 target destroyed." : `\n  ⚠️  EC2 target NOT destroyed — run \`node scripts/slot.mjs down\` by hand.`);
+      if (results.length) {
+        results[results.length - 1].cleanup = !attemptedApply
+          ? { status: "ok", did: "nothing was provisioned (the EC2 slot is busy)" }
+          : destroyed
+            ? { status: "ok", did: "destroyed the EC2 target" }
+            : { status: "blocked", did: "EC2 target NOT destroyed — run `node scripts/slot.mjs down` by hand" };
+      }
     }
   } else {
   const { browser, page: tab } = await createSession();
@@ -644,6 +675,10 @@ async function main() {
     let pendingCreate = false; // carries "still waiting to confirm a created resource is ready" across procedures on this same fork
     for (let i = 0; i < testable.length; i++) {
       const proc = testable[i];
+      if (stopRequested()) {
+        results.push({ title: proc.title, verdict: "stopped", actions: [stoppedLine(0, "not run")], shots: [], stepTitles: proc.steps.map((s) => s.title || ""), target });
+        continue;
+      }
       const where = fork ? "fork " + fork.forkId : serviceId !== SERVICE_ID ? `the service this page created (${serviceId})` : "the standing service";
       console.log(`\n— Walking "${proc.title}" (${i + 1}/${testable.length}) on ${where}...`);
       // Screenshots carry the target in their name, so a Cloud failure and a self-hosted failure on
@@ -769,6 +804,7 @@ async function main() {
   const notes = SHOTS_DISABLED
     ? ["screenshots are OFF (DOCTEST_SHOTS=none), so this verdict has no visual evidence behind it"]
     : [];
+  if (stopRequested()) notes.push(`the run was interrupted (${stopReason()}): it stopped after the step in flight and cleaned up; the later steps were not run`);
   // One verdict per product. A product the plan declares but this run excluded is "not run"; one the
   // page is tagged with that no block covers is "not covered". Both are stated, never folded into a
   // pass: the page passes only if every target that ran passed (overallVerdict reads the procedures).
@@ -838,8 +874,10 @@ async function main() {
   // be moved or sent as a unit; the live report otherwise.
   reveal(archived ? join(archived, "report.html") : out, archived || SHOTS);
   if (slotBusy) console.error(`\n  Not run: ${slotBusy}\n`);
+  if (stopRequested()) console.error(`\n  Interrupted (${stopReason()}): stopped early, after cleaning up.\n`);
   // 3 is also what a busy project lock exits with: the run did not happen, which is neither a pass nor a docs failure.
-  process.exit(slotBusy ? 3 : overall === "fail" ? 1 : 0);
+  // 130 is the shell's code for an interrupted command: the run was cut short, whatever it saw first.
+  process.exit(stopRequested() ? 130 : slotBusy ? 3 : overall === "fail" ? 1 : 0);
 }
 
 main().catch((e) => { console.error("Error:", e); process.exit(1); });
